@@ -117,7 +117,7 @@ class PipeManager
             throw PipeHubException::missingSubject();
         }
 
-        $subject = $this->subject = PipeEnvelope::wrap($this->subject);
+        $subject = $this->subject = PipeEnvelope::wrap($this->subject, $this->app);
 
         if ($subject->flowName() === null) {
             $subject->setFlowName($this->name);

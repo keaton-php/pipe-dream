@@ -134,7 +134,7 @@ class PipeHub
 
     public function subject($subject)
     {
-        $this->subject = PipeEnvelope::wrap($subject);
+        $this->subject = PipeEnvelope::wrap($subject, $this->app);
 
         return $this;
     }
@@ -284,7 +284,7 @@ class PipeHub
             throw PipeHubException::missingSubject();
         }
 
-        return $this->subject = PipeEnvelope::wrap($subject);
+        return $this->subject = PipeEnvelope::wrap($subject, $this->app);
     }
 
     protected function run(PipeEnvelope $subject): PipeEnvelope
@@ -381,7 +381,8 @@ class PipeHub
         // Written in full on every run: a rule the container shares between
         // hubs or runs never keeps another hub's skip or stop policy.
         return $rule
-            ->applyPolicy($skip, 'Skipped: the hub\'s skipIf() returned true', $this->stopOnError);
+            ->applyPolicy($skip, 'Skipped: the hub\'s skipIf() returned true', $this->stopOnError)
+            ->setContainer($this->app);
     }
 
     protected function pipeWillSkip($subject, $pipe): bool
@@ -453,7 +454,7 @@ class PipeHub
 
     public function wrapInEnvelope($subject)
     {
-        return PipeEnvelope::wrap($subject);
+        return PipeEnvelope::wrap($subject, $this->app);
     }
 
     public function getInstantiatedPipes(): array

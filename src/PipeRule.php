@@ -5,6 +5,7 @@ namespace Keaton\PipeDream;
 use BadMethodCallException;
 use Closure;
 use Illuminate\Container\Container as IlluminateContainer;
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Str;
 use Keaton\PipeDream\Concerns\PassesSubjectToCallbacks;
 use Keaton\PipeDream\Exceptions\PipeRuleError;
@@ -74,6 +75,8 @@ abstract class PipeRule
     /** Set by withoutErrorHandling() for the current run only. */
     protected bool $runRethrowErrors = false;
 
+    protected ?Container $container = null;
+
     protected $subject;
 
     public function __construct(?bool $errorsAreFatal = null, ?bool $stopOnError = null, ?bool $shouldSkip = null)
@@ -121,6 +124,12 @@ abstract class PipeRule
         return $this;
     }
 
+    public function setContainer(Container $container)
+    {
+        $this->container = $container;
+
+        return $this;
+    }
 
     /**
      * Whether the last run skipped this rule without executing it.
@@ -177,9 +186,13 @@ abstract class PipeRule
         return null;
     }
 
-    protected function container()
+    /**
+     * The container the rule's method is called through: the hub's. A rule
+     * driven by something other than a PipeHub falls back to the global one.
+     */
+    protected function container(): Container
     {
-        return IlluminateContainer::getInstance();
+        return $this->container ?? IlluminateContainer::getInstance();
     }
 
     protected function skipMessage(): string
