@@ -2,29 +2,33 @@
 
 namespace R1kon\PipeDream\Exceptions;
 
-use Exception;
+use Illuminate\Contracts\Container\Container;
 use R1kon\PipeDream\PipeEnvelope;
-use Illuminate\Container\Container;
+use Throwable;
 
+/**
+ * Routes an exception a rule raised to the handler registered for it. A
+ * handler registered for a parent class (or interface) also handles its
+ * subclasses; an exact match always wins over a parent match.
+ */
 class PipeRuleExceptionHandler
 {
-    
-    protected $handlers = [];
+    protected array $handlers = [];
 
     protected ?Container $app;
-    
-    //This holds all of the exceptions and handles them
-    //And really should return something of note.
+
     public function __construct(?Container $app = null)
     {
-        if($this->app = $app ?? app())
-            $this->bootHandlers();
+        $this->app = $app ?? \Illuminate\Container\Container::getInstance();
 
+        $this->bootHandlers();
     }
 
     public function addHandler($exception, $handler)
     {
         $this->handlers[$exception] = $handler;
+
+        return $this;
     }
 
     public function handlers()
@@ -34,19 +38,32 @@ class PipeRuleExceptionHandler
 
     public function bootHandlers()
     {
-        // Exception handlers are optional: an app that never registers any still works.
-        $this->handlers = $this->app->bound('pipehub:exceptions')
-            ? $this->app->make('pipehub:exceptions')
+        $this->handlers = $this->app && $this->app->bound('pipehub:exceptions')
+            ? (array) $this->app->make('pipehub:exceptions')
             : [];
     }
 
-    public function handle(PipeEnvelope $subject, Exception $exception)
+    public function handlerFor(Throwable $exception)
     {
-        //This is a placeholder for now.
-        if( ! $exceptionHandler = $this->handlers[get_class($exception)] ?? null)
-            return null;
+        if (isset($this->handlers[get_class($exception)])) {
+            return $this->handlers[get_class($exception)];
+        }
 
-        return $exceptionHandler::handle($subject, $exception);
+        foreach ($this->handlers as $class => $handler) {
+            if ($exception instanceof $class) {
+                return $handler;
+            }
+        }
+
+        return null;
     }
 
+    public function handle(PipeEnvelope $subject, Throwable $exception)
+    {
+        if (! $handler = $this->handlerFor($exception)) {
+            return null;
+        }
+
+        return $handler::handle($subject, $exception);
+    }
 }
