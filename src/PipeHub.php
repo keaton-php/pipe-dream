@@ -351,6 +351,7 @@ class PipeHub
                 throw $e;
             }
         } catch (PipeRuleRedirect $e) {
+            $e->resolveRoute($this->app);
             $this->logInfo('PipeHub:sendIt', 'Redirecting to '.$e->redirectTo);
 
             throw $e;

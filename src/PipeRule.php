@@ -276,7 +276,9 @@ abstract class PipeRule
             $this->registerException($e, self::FATAL);
 
             throw $e;
-        } catch (PipeRuleRedirect|PipeRuleLoadView $e) {
+        } catch (PipeRuleRedirect $e) {
+            throw $e->resolveRoute($this->container());
+        } catch (PipeRuleLoadView $e) {
             throw $e;
         } catch (Throwable $e) {
             // Anything else, including PHP errors such as a TypeError.
