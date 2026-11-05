@@ -47,6 +47,16 @@ $signup->logs();        // every step, in order, with timings
 $signup->hasErrors();   // did anything go wrong along the way?
 ```
 
+## See it running
+
+A demo app pushes 500 synthetic ad clicks through a five-stage, 14-rule flow. Every page below is built from the flow definition and the persisted pipe logs, with nothing written by hand.
+
+| The flow, rendered from the code | One click's full story |
+|---|---|
+| ![The flow](docs/01-flow.png) | ![One click's story](docs/03-click-story.png) |
+| **Dashboard built from the logs** | **The whole flow is one readable file** |
+| ![Dashboard](docs/02-dashboard.png) | ![Source](docs/04-code.png) |
+
 ## A rule is one small class
 
 ```php
