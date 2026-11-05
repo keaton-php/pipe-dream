@@ -3,6 +3,8 @@
 namespace Keaton\PipeDream\Tests\Feature;
 
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Keaton\PipeDream\Models\PipeDreamLog;
 use Keaton\PipeDream\PipeEnvelope;
@@ -91,6 +93,63 @@ class DatabasePersistTest extends TestCase
         $row = PipeDreamLog::first();
         $this->assertTrue($row->has_fatals);
         $this->assertGreaterThan($firstLength, strlen($row->log));
+    }
+
+    public function test_a_second_persist_updates_the_row_and_keeps_created_at(): void
+    {
+        $envelope = PipeEnvelope::wrap(new stdClass())->persistWith(new DatabasePersistStrategy());
+
+        Carbon::setTestNow('2026-11-05 10:00:00');
+        $this->flow()->subject($envelope)->sendIt();
+
+        Carbon::setTestNow('2026-11-05 10:05:00');
+        $envelope->logger()->fatal('Later', 'Found after the flow');
+        DB::enableQueryLog();
+        $row = $envelope->persist();
+        $writes = array_values(array_filter(
+            array_column(DB::getQueryLog(), 'query'),
+            fn ($sql) => ! str_starts_with(strtolower(ltrim($sql)), 'select')
+        ));
+        Carbon::setTestNow();
+
+        // One statement, no read-then-write: a native upsert.
+        $this->assertCount(1, $writes);
+        $this->assertStringContainsString('on conflict', strtolower($writes[0]));
+
+        $this->assertInstanceOf(PipeDreamLog::class, $row);
+        $this->assertSame(1, PipeDreamLog::count());
+        $this->assertTrue($row->has_fatals);
+        $this->assertSame('2026-11-05 10:00:00', $row->created_at->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-11-05 10:05:00', $row->updated_at->format('Y-m-d H:i:s'));
+    }
+
+    /**
+     * The race the native upsert closes: another worker inserted this run's
+     * row after we last looked. SQLite in one process cannot run two writers
+     * at once, so this proves the conflict path, not true concurrency.
+     */
+    public function test_a_row_another_worker_already_wrote_is_updated_not_duplicated(): void
+    {
+        $envelope = PipeEnvelope::wrap(new stdClass())->persistWith(new DatabasePersistStrategy());
+
+        DB::table('pipe_dream_logs')->insert([
+            'run_id' => $envelope->runId(),
+            'flow' => 'Written by another worker',
+            'log' => '[]',
+            'has_errors' => false,
+            'has_fatals' => false,
+            'created_at' => '2026-11-05 09:00:00',
+            'updated_at' => '2026-11-05 09:00:00',
+        ]);
+
+        $this->flow()->subject($envelope)->sendIt();
+
+        $this->assertSame(1, PipeDreamLog::count());
+        $row = PipeDreamLog::first();
+        $this->assertSame('Click intake', $row->flow);
+        $this->assertTrue($row->has_errors);
+        $this->assertSame('2026-11-05 09:00:00', $row->created_at->format('Y-m-d H:i:s'));
+        $this->assertNotSame('2026-11-05 09:00:00', $row->updated_at->format('Y-m-d H:i:s'));
     }
 
     public function test_each_run_gets_its_own_row(): void

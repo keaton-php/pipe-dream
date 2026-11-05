@@ -262,7 +262,7 @@ $click->persistWith(new DatabasePersistStrategy());
 $this->app->bind(PipeLoggerPersistStrategy::class, DatabasePersistStrategy::class);
 ```
 
-`DatabasePersistStrategy` upserts on the envelope's `runId()`, so persisting the same run again updates its row instead of adding one. The log column is JSON by default:
+`DatabasePersistStrategy` writes with a single native upsert keyed on the envelope's `runId()` (`INSERT … ON CONFLICT` / `ON DUPLICATE KEY UPDATE`), so persisting the same run again updates its row instead of adding one, even when two workers persist it at the same moment. `created_at` is set when the row is first written and never changed; `updated_at` moves on every write. The log column is JSON by default:
 
 ```json
 [{"time":1762372800.4121,"key":"PipeManager:sendIt","type":"info","data":"Sending subject through all hubs","context":{"name":"Ad click intake","description":null}},
