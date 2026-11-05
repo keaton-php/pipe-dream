@@ -13,7 +13,9 @@ class PipeDreamServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-       //;
+        // Default: no custom rule-exception handlers. Apps can rebind this to
+        // an [ExceptionClass => HandlerClass] map.
+        $this->app->singletonIf('pipehub:exceptions', fn () => []);
     }
 
     /**
