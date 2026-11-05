@@ -327,6 +327,9 @@ abstract class PipeRule
     protected function unregister()
     {
         $this->subject->unregister($this);
+
+        // A finished rule keeps no hold on the envelope (or its subject).
+        $this->subject = null;
     }
 
     protected function info($message)
