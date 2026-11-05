@@ -135,6 +135,12 @@ class PipeManager
 
                 $completed = true;
             } catch (PipeRuleRedirect|PipeRuleLoadView $e) {
+                if ($e instanceof PipeRuleRedirect) {
+                    // Defensive: hubs resolve their own redirects, but nothing
+                    // leaves the manager without a URL.
+                    $e->resolveRoute($this->app);
+                }
+
                 $subject->logger()->info('PipeManager:sendIt', 'Flow handed off: '.$e->getMessage());
 
                 throw $e;

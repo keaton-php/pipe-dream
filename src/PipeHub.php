@@ -258,6 +258,9 @@ class PipeHub
             return $this->run($subject);
         } catch (PipeRuleFatal $e) {
             return $subject;
+        } catch (PipeRuleRedirect $e) {
+            // Defensive: whatever threw it, the caller gets a usable URL.
+            throw $e->resolveRoute($this->app);
         } finally {
             if ($this->persistLogsOnFinalize) {
                 $subject->persist();
@@ -363,7 +366,16 @@ class PipeHub
             $this->logError('PipeHub:sendIt', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeHubContext());
 
             if ($this->onFailure) {
-                $this->callViaContainer($this->onFailure, ['subject' => $subject, 'exception' => $e]);
+                try {
+                    $this->callViaContainer($this->onFailure, ['subject' => $subject, 'exception' => $e]);
+                } catch (PipeRuleRedirect $redirect) {
+                    // A redirect from onFailure() is thrown from this catch
+                    // block, so the redirect catch above never sees it.
+                    $redirect->resolveRoute($this->app);
+                    $this->logInfo('PipeHub:sendIt', 'Redirecting to '.$redirect->redirectTo);
+
+                    throw $redirect;
+                }
             }
 
             if ($this->failureIsFatal) {
