@@ -10,6 +10,7 @@ use Keaton\PipeDream\Exceptions\PipeHubException;
 use Keaton\PipeDream\Exceptions\PipeRuleFatal;
 use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
 use Keaton\PipeDream\Exceptions\PipeRuleRedirect;
+use Throwable;
 use Keaton\PipeDream\PipeDreamPipeline as Pipeline;
 
 /**
@@ -354,7 +355,7 @@ class PipeHub
             $this->logInfo('PipeHub:sendIt', 'Loading view '.$e->view);
 
             throw $e;
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             $this->logError('PipeHub:sendIt', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeHubContext());
 
             if ($this->onFailure) {
@@ -420,7 +421,7 @@ class PipeHub
             }
         } catch (PipeRuleRedirect|PipeRuleLoadView $e) {
             throw $e;
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
             $this->logError('PipeHub:executeThenCallback', $e->getMessage(), ['exception' => get_class($e)]);
         }
 

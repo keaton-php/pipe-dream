@@ -11,6 +11,7 @@ use Keaton\PipeDream\Exceptions\PipeRuleError;
 use Keaton\PipeDream\Exceptions\PipeRuleFatal;
 use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
 use Keaton\PipeDream\Exceptions\PipeRuleRedirect;
+use Throwable;
 
 /**
  * One step of a flow. Extend it and add a public method named after the
@@ -220,7 +221,8 @@ abstract class PipeRule
             throw $e;
         } catch (PipeRuleRedirect|PipeRuleLoadView $e) {
             throw $e;
-        } catch (\Exception $e) {
+        } catch (Throwable $e) {
+            // Anything else, including PHP errors such as a TypeError.
             $this->logExecutionResult($this->subject, $this->ruleKey(), self::FAIL);
             $this->registerException($e);
 

@@ -10,6 +10,7 @@ use Keaton\PipeDream\Exceptions\PipeHubException;
 use Keaton\PipeDream\Exceptions\PipeRuleFatal;
 use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
 use Keaton\PipeDream\Exceptions\PipeRuleRedirect;
+use Throwable;
 
 /**
  * A whole flow: hubs run in order against one envelope. The log is
@@ -139,7 +140,7 @@ class PipeManager
                 throw $e;
             } catch (PipeRuleFatal $e) {
                 $subject->logger()->warning('PipeManager:sendIt', 'Flow stopped by a fatal: '.$e->getMessage(), $this->getPipeManagerContext());
-            } catch (\Exception $e) {
+            } catch (Throwable $e) {
                 $subject->logger()->error('PipeManager:sendIt', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeManagerContext());
             }
 
