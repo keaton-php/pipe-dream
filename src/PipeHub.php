@@ -2,342 +2,434 @@
 
 namespace R1kon\PipeDream;
 
-use R1kon\PipeDream\Exceptions\PipeRuleLoadView;
-use Illuminate\Support\Arr;
-use R1kon\PipeDream\PipeRule;
-//use Illuminate\Pipeline\Pipeline;
-use R1kon\PipeDream\Exceptions\PipeRuleRedirect;
+use Closure;
+use Illuminate\Container\Container as IlluminateContainer;
 use Illuminate\Contracts\Container\Container;
-use R1kon\PipeDream\Exceptions\PipeRuleFatal;
-use R1kon\PipeDream\Exceptions\PipeHubException;
-use R1kon\PipeDream\PipeDreamPipeline as Pipeline;
 use R1kon\PipeDream\Concerns\PassesSubjectToCallbacks;
+use R1kon\PipeDream\Exceptions\PipeHubException;
+use R1kon\PipeDream\Exceptions\PipeRuleFatal;
+use R1kon\PipeDream\Exceptions\PipeRuleLoadView;
+use R1kon\PipeDream\Exceptions\PipeRuleRedirect;
+use R1kon\PipeDream\PipeDreamPipeline as Pipeline;
 
+/**
+ * A named stage of a flow: an ordered list of rules (or closures) the
+ * subject passes through, with per-stage control over skipping and
+ * stopping, a then() callback and events.
+ */
 class PipeHub
 {
     use PassesSubjectToCallbacks;
 
+    const EVENTS = ['before', 'after', 'skip', 'beforeEach', 'afterEach'];
+
     protected $app;
 
-    protected $name;
+    protected ?string $name = null;
 
-    protected $description;
+    protected ?string $description = null;
 
-    protected $subject;
+    protected ?PipeEnvelope $subject = null;
 
-    protected ?\Closure $thenCallback = null;
+    protected ?Closure $thenCallback = null;
 
-    protected $pipes = [];
+    protected array $pipes = [];
 
-    protected $instantiatedPipes = [];
+    protected array $instantiatedPipes = [];
 
-    protected ?\Closure $skipIfCallback = null;
+    protected ?Closure $skipIfCallback = null;
 
-    protected $skipPipes = false;
+    protected bool $skipThisHub = false;
 
-    protected $skipThisHub = false;
-
-    protected $broadcastEvents = [
+    protected array $broadcastEvents = [
         'before' => null,
         'after' => null,
         'skip' => null,
         'beforeEach' => null,
-        'afterEach' => null
+        'afterEach' => null,
     ];
 
-    protected $onFailure;
+    protected ?Closure $onFailure = null;
 
-    protected $stopOnError = false;
+    protected bool $stopOnError = false;
 
-    protected $stopOnFatal = false;
+    protected bool $stopOnFatal = false;
 
-    protected $persistLogsOnFinalize = true;
+    protected bool $failureIsFatal = false;
 
-    public function __construct(Container $app)
+    protected bool $persistLogsOnFinalize = true;
+
+    public function __construct(?Container $app = null)
     {
-        $this->app = $app;
+        $this->app = $app ?? IlluminateContainer::getInstance();
     }
 
     public static function create(?Container $app = null)
     {
-        $app = $app ?? (function_exists('app') ? app() : null);
         return new static($app);
     }
 
     public function name($name)
     {
         $this->name = $name;
+
         return $this;
     }
 
+    public function description($description)
+    {
+        $this->description = $description;
+
+        return $this;
+    }
+
+    /**
+     * @param  class-string<PipeRule>|Closure  $pipe
+     *
+     * @throws PipeHubException when the pipe is neither a PipeRule class nor a closure
+     */
     public function addPipe($pipe)
     {
-        if(
-            (class_exists($pipe) && is_subclass_of($pipe, PipeRule::class)) ||
-            $pipe instanceof \Closure
-        )
-            $this->pipes[] = $pipe;
+        $isRule = is_string($pipe) && class_exists($pipe) && is_subclass_of($pipe, PipeRule::class);
+
+        if (! $isRule && ! $pipe instanceof Closure) {
+            throw PipeHubException::invalidPipe($pipe);
+        }
+
+        $this->pipes[] = $pipe;
 
         return $this;
     }
 
     public function addPipes(array $pipes)
     {
-        foreach($pipes as $pipe)
-        {
+        foreach ($pipes as $pipe) {
             $this->addPipe($pipe);
         }
-        
+
         return $this;
     }
 
-    public function skipIf(\Closure $callback)
+    /**
+     * When the callback returns true the hub still runs, but every rule in
+     * it is logged as skipped and none executes. then() still runs.
+     */
+    public function skipIf(Closure $callback)
     {
         $this->skipIfCallback = $callback;
+
+        return $this;
+    }
+
+    /**
+     * Skip this hub entirely: nothing in it runs, not even then().
+     */
+    public function skip($shouldSkip = true)
+    {
+        $this->skipThisHub = (bool) $shouldSkip;
+
         return $this;
     }
 
     public function subject($subject)
     {
         $this->subject = PipeEnvelope::wrap($subject);
+
         return $this;
     }
 
-    public function then(\Closure $callback)
+    /**
+     * Runs after the hub's last rule, when the hub was not ended by a fatal
+     * or a failure.
+     */
+    public function then(Closure $callback)
     {
         $this->thenCallback = $callback;
+
         return $this;
     }
 
-    private function runSkipIfCallback()
-    {
-        return $this->skipPipes = 
-                $this->skipIfCallback 
-                ? $this->callViaContainer($this->skipIfCallback, ['subject' => $this->subject]) 
-                : false;
-    }
-
-    private function initializeSubject($subject)
-    {
-        $this->subject = $subject;
-
-        $this->registerEventsInSubject();
-        
-        return $subject;
-    }
-
-    private function addSkipsToSubject()
-    {
-        $this->subject->setSkips($this->skipPipes);
-    }
-
-    private function shouldSkipPipe($pipe)
-    {
-        
-    }
-
-    public function skip($shouldSkip = true)
-    {
-        //Skip this whole pipe run.
-        $this->skipThisHub = $shouldSkip;
-        return $this;
-    }
-
-    private function pipesToSkip()
-    {
-        if($this->runSkipIfCallback())
-            return $this->pipes;
-
-        return [];
-    }
-
-    public function sendIt($subject = null)
-    {
-        if(!$subject = $subject ?? $this->subject)
-            throw new PipeHubException("No subject provided");
-
-        if(!$subject instanceof PipeEnvelope)
-            $subject = $this->wrapInEnvelope($subject);
-
-        $this->initializeSubject($subject);
-        
-        if($this->skipThisHub)
-        {
-            $this->registerPipeHubSkip();
-            return $subject;
-        }
-
-        $pipesToSkip = $this->pipesToSkip();
-
-        try 
-        {
-            $this->instantiatedPipes = array_map(function($pipe) use($pipesToSkip) {
-
-                if($pipe instanceof \Closure)
-                    return $this->wrapInClosure($pipe);
-
-                return $this->app->make($pipe, [
-                                    'stopOnError' => $this->stopOnError,
-                                    'shouldSkip' => in_array($pipe, $pipesToSkip),
-                                ]);
-            }, $this->getPipes());
-
-            $this->registerPipeHubStart();
-
-            $subject = (new Pipeline($this->app))
-                            ->send($this->runBeforePipelineHook($subject))
-                            ->through($this->instantiatedPipes)
-                            ->then($this->completePipeRun());
-
-        } catch(PipeRuleFatal $e)
-        {
-            $this->handleException($e, "PipeHub:sendIt");
-            throw $e;
-        
-        } catch(PipeRuleRedirect $e)
-        {
-            $this->logInfo("PipeHub:sendIt", "Redirecting to " . $e->redirectTo);
-            throw $e;
-        } catch(PipeRuleLoadView $e)
-        {
-            $this->logInfo("PipeHub:sendIt", "Loading view " . $e->view);
-            throw $e;
-        }
-        catch(\Exception $e)
-        {
-            //TODO: handle exceptions here, how should we proceed?
-            $this->handleException($e, "PipeHub:sendIt");
-            if($this->onFailure instanceof \Closure)
-                $this->callViaContainer($this->onFailure, ['subject' => $subject]);
-        } finally {
-            $this->registerPipeHubFinish();
-        }
-
-        return $subject;
-    }
-
-    public function persistLogs($persist = true)
-    {
-        $this->persistLogsOnFinalize = $persist;
-        return $this;
-    }
-
-    public function onFailure(\Closure $callback)
+    /**
+     * Runs when the hub fails: an exception escaped the pipeline (an error
+     * under stopOnError(), or a rule using withoutErrorHandling()).
+     */
+    public function onFailure(Closure $callback)
     {
         $this->onFailure = $callback;
+
         return $this;
     }
 
+    /**
+     * Without this, a fatal ends this hub and the flow moves on to the next
+     * hub. With it, a fatal here ends the whole flow.
+     */
     public function stopOnFatal($shouldStopOnFatal = true)
     {
-        $this->stopOnFatal = $shouldStopOnFatal;
-        return $this;
-    }
-
-    public function failureIsFatal()
-    {
-        $this->onFailure = function($subject) {
-            throw new PipeRuleFatal("Failure is fatal, stopping pipeline", $subject);
-        };
+        $this->stopOnFatal = (bool) $shouldStopOnFatal;
 
         return $this;
     }
 
-    public function stopOnError()
+    /**
+     * A PipeRuleError ends this hub (as a failure) instead of being logged
+     * and passed over.
+     */
+    public function stopOnError($shouldStopOnError = true)
     {
-        $this->stopOnError = true;
+        $this->stopOnError = (bool) $shouldStopOnError;
+
         return $this;
     }
 
-    private function registerEventsInSubject()
+    /**
+     * A failure in this hub is logged as a fatal and ends the whole flow.
+     * onFailure() still runs first.
+     */
+    public function failureIsFatal($isFatal = true)
     {
-        $this->subject->setEvents(Arr::only($this->broadcastEvents, ['beforeEach', 'afterEach']));
-    }
+        $this->failureIsFatal = (bool) $isFatal;
 
-    public function broadcastEventAfter($event)
-    {
-       $this->broadcastEvents['after'] = $event;
-       return $this;
-    }
-
-    public function broadcastEventAfterEachPipe($event)
-    {
-        $this->broadcastEvents['afterEach'] = $event;
         return $this;
     }
 
-    public function broadcastEventBeforeEachPipe($event)
+    /**
+     * Whether a hub run on its own persists its log when it finishes. Hubs
+     * inside a PipeManager never persist; the manager persists once.
+     */
+    public function persistLogs($persist = true)
     {
-        $this->broadcastEvents['beforeEach'] = $event;
+        $this->persistLogsOnFinalize = (bool) $persist;
+
         return $this;
     }
 
     public function broadcastEventBefore($event)
     {
-        $this->broadcastEvents['before'] = $event;
+        return $this->registerEvent('before', $event);
+    }
+
+    public function broadcastEventAfter($event)
+    {
+        return $this->registerEvent('after', $event);
+    }
+
+    public function broadcastEventOnSkip($event)
+    {
+        return $this->registerEvent('skip', $event);
+    }
+
+    public function broadcastEventBeforeEachPipe($event)
+    {
+        return $this->registerEvent('beforeEach', $event);
+    }
+
+    public function broadcastEventAfterEachPipe($event)
+    {
+        return $this->registerEvent('afterEach', $event);
+    }
+
+    protected function registerEvent(string $type, $event)
+    {
+        if (! is_string($event) || ! class_exists($event)) {
+            throw PipeHubException::invalidEvent($event);
+        }
+
+        $this->broadcastEvents[$type] = $event;
+
         return $this;
     }
 
-    private function broadcastEvent($event)
+    /**
+     * Run this hub on its own: the hub is the whole flow, so its log is
+     * persisted when it finishes (see persistLogs()). A fatal never escapes;
+     * read it from the envelope with hasFatalErrors().
+     */
+    public function sendIt($subject = null)
     {
-        $this->app->make('events')->dispatch(new $event($this->subject));
-        return $this;
+        $subject = $this->prepareSubject($subject);
+
+        if ($subject->flowName() === null) {
+            $subject->setFlowName($this->name);
+        }
+
+        try {
+            return $this->run($subject);
+        } catch (PipeRuleFatal $e) {
+            return $subject;
+        } finally {
+            if ($this->persistLogsOnFinalize) {
+                $subject->persist();
+            }
+        }
     }
 
-    private function runBeforePipelineHook($subject)
+    /**
+     * Run this hub as one stage of a PipeManager flow: nothing is persisted,
+     * and a fatal that must end the flow is rethrown to the manager.
+     *
+     * @internal
+     *
+     * @throws PipeRuleFatal when the flow must stop
+     */
+    public function sendItWithinFlow(PipeEnvelope $subject): PipeEnvelope
     {
-        //Run the hook before the pipeline starts, basically the closure specified in ->before(function($subject) {  });
-        /*
-        I don't think you need to return the subject in the closure, I think you can just do it, like the query does in a scope
-        LOG LEVELS! SO WE CAN DO LIKE 'VERBOSE' WHERE IT'S ALL OF IT, 'DEBUG' WHERE IT'S DEBUGGING, 'NONE' WHERE IT'S NONE
-        THAT KIND OF SHIT. THAT WAY WE CAN SAVE IT IN THE DB CORRECTLY.
-        */
+        return $this->run($this->prepareSubject($subject));
+    }
+
+    protected function prepareSubject($subject): PipeEnvelope
+    {
+        if (! $subject = $subject ?? $this->subject) {
+            throw PipeHubException::missingSubject();
+        }
+
+        return $this->subject = PipeEnvelope::wrap($subject);
+    }
+
+    protected function run(PipeEnvelope $subject): PipeEnvelope
+    {
+        if ($this->skipThisHub) {
+            $this->logInfo('PipeHub:sendIt', 'Skipping hub', $this->getPipeHubContext());
+            $this->sendEvent('skip');
+
+            return $subject;
+        }
+
+        try {
+            $skipRules = (bool) ($this->skipIfCallback
+                ? $this->callViaContainer($this->skipIfCallback, ['subject' => $subject])
+                : false);
+
+            $this->instantiatedPipes = array_map(
+                fn ($pipe) => $this->instantiate($pipe, $skipRules),
+                $this->pipes
+            );
+
+            $this->logInfo('PipeHub:sendIt', 'Sending subject through all pipes', $this->getPipeHubContext());
+
+            if ($skipRules) {
+                $this->logInfo('PipeHub:sendIt', 'Skipping every rule: skipIf() returned true', $this->getPipeHubContext());
+                $this->sendEvent('skip');
+            } else {
+                $this->sendEvent('before');
+            }
+
+            (new Pipeline($this->app))
+                ->send($subject)
+                ->through($this->instantiatedPipes)
+                ->hooks(
+                    function ($passable, $pipe) {
+                        if (! $this->pipeWillSkip($passable, $pipe)) {
+                            $this->sendEvent('beforeEach', $pipe);
+                        }
+                    },
+                    function ($passable, $pipe) {
+                        if (! ($pipe instanceof PipeRule && $pipe->wasSkipped())) {
+                            $this->sendEvent('afterEach', $pipe);
+                        }
+                    }
+                )
+                ->then(function ($subject) use ($skipRules) {
+                    if (! $skipRules) {
+                        $this->sendEvent('after');
+                    }
+
+                    return $this->executeThenCallback($subject);
+                });
+        } catch (PipeRuleFatal $e) {
+            $this->logWarning('PipeHub:sendIt', sprintf(
+                'Stopped by a fatal: %s. The rest of this %s does not run.',
+                $e->getMessage(),
+                $this->stopOnFatal ? 'flow' : 'hub'
+            ), $this->getPipeHubContext() + ['ends' => $this->stopOnFatal ? 'flow' : 'hub']);
+
+            if ($this->stopOnFatal) {
+                throw $e;
+            }
+        } catch (PipeRuleRedirect $e) {
+            $this->logInfo('PipeHub:sendIt', 'Redirecting to '.$e->redirectTo);
+
+            throw $e;
+        } catch (PipeRuleLoadView $e) {
+            $this->logInfo('PipeHub:sendIt', 'Loading view '.$e->view);
+
+            throw $e;
+        } catch (\Exception $e) {
+            $this->logError('PipeHub:sendIt', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeHubContext());
+
+            if ($this->onFailure) {
+                $this->callViaContainer($this->onFailure, ['subject' => $subject, 'exception' => $e]);
+            }
+
+            if ($this->failureIsFatal) {
+                $subject->logger()->fatal('PipeHub:sendIt', 'Failure is fatal: '.$e->getMessage(), $this->getPipeHubContext() + ['ends' => 'flow']);
+
+                throw new PipeRuleFatal($e->getMessage(), $subject, 0, $e);
+            }
+        } finally {
+            $this->logInfo('PipeHub:sendIt', 'Finalized result!');
+        }
+
         return $subject;
     }
 
-    private function handleException($exception, $key="PipeHub:sendIt")
+    protected function instantiate($pipe, bool $skip): PipeRule
     {
-        $this->logError($key,$exception->getMessage(), [
-            'exception' => get_class($exception)
-        ]);
+        $rule = $pipe instanceof Closure ? new ClosurePipe($pipe) : $this->app->make($pipe);
+
+        if ($this->stopOnError) {
+            $rule->setStopOnError(true);
+        }
+
+        if ($skip) {
+            $rule->shouldSkip(true, 'Skipped: the hub\'s skipIf() returned true');
+        }
+
+        return $rule;
     }
 
-    private function registerPipeHubSkip($key = "PipeHub:sendIt")
+    protected function pipeWillSkip($subject, $pipe): bool
     {
-        $this->logInfo($key, "Skipping hub", $this->getPipeHubContext());
-        $this->sendEvent('skip');
+        return $pipe instanceof PipeRule && $pipe->willSkip($subject);
     }
 
-    private function registerPipeHubStart($key = "PipeHub:sendIt")
+    protected function sendEvent(string $eventType, $pipe = null)
     {
-        $this->logInfo($key,"Sending subject through all pipes", $this->getPipeHubContext());
-
-        $this->sendEvent('before');
-    }
-
-    private function sendEvent($eventType)
-    {
-        if( ! $event = $this->broadcastEvents[$eventType] ?? null)
+        if (! $event = $this->broadcastEvents[$eventType] ?? null) {
             return;
+        }
 
-        $this->logInfo($this->getLogKey(), "Sending event before pipes [".$eventType."]");
-        $this->broadcastEvent($event);
+        $pipeKey = $pipe instanceof PipeRule ? $pipe->ruleKey() : null;
+
+        $this->logInfo('PipeHub:event', "Broadcasting [{$eventType}] event {$event}", array_filter([
+            'event' => $eventType,
+            'hub' => $this->name,
+            'pipe' => $pipeKey,
+        ]));
+
+        $this->app->make('events')->dispatch(
+            $pipeKey === null ? new $event($this->subject) : new $event($this->subject, $pipeKey)
+        );
     }
 
-    private function getLogKey()
-    { 
-        $trace = debug_backtrace();
-        $caller = $trace[1];
-
-        return $caller['class'] . ':' . $caller['function'];
-    }
-
-    private function registerPipeHubFinish($key = "PipeHub:sendIt")
+    protected function executeThenCallback($subject)
     {
-        $this->logInfo($key,"Finalized result!");
+        try {
+            if ($this->thenCallback) {
+                $this->callViaContainer($this->thenCallback, ['subject' => $subject]);
+            }
+        } catch (PipeRuleRedirect|PipeRuleLoadView $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            $this->logError('PipeHub:executeThenCallback', $e->getMessage(), ['exception' => get_class($e)]);
+        }
 
-        if($this->persistLogsOnFinalize)
-            $this->subject->persist();
+        return $subject;
+    }
+
+    protected function callViaContainer($callback, $parameters = [])
+    {
+        return $this->app->call($callback, $this->withSubjectParameter($callback, $parameters));
     }
 
     protected function logInfo($key, $message, $context = [])
@@ -345,53 +437,29 @@ class PipeHub
         $this->subject->logger()->info($key, $message, $context);
     }
 
+    protected function logWarning($key, $message, $context = [])
+    {
+        $this->subject->logger()->warning($key, $message, $context);
+    }
+
     protected function logError($key, $message, $context = [])
     {
         $this->subject->logger()->error($key, $message, $context);
     }
 
-    private function getPipeHubContext()
+    protected function getPipeHubContext()
     {
         return [
             'name' => $this->name,
-            'description' => $this->description
+            'description' => $this->description,
         ];
-    }
-
-    private function completePipeRun()
-    {
-        return function($subject) {
-            $this->sendEvent('after');
-            return $this->executeThenCallback($subject);
-        };
-    }
-
-    private function callViaContainer($callback, $parameters = [])
-    {
-        return $this->app->call($callback, $this->withSubjectParameter($callback, $parameters));
-    }
-
-    private function executeThenCallback($subject)
-    {
-        try {
-            if($this->thenCallback)
-            {
-                $callable = $this->thenCallback->bindTo($this, static::class);
-                $this->callViaContainer($callable, ['subject' => $subject]);
-            }
-            
-        } catch(\Exception $e)
-        {
-            $this->handleException($e, "PipeHub:executeThenCallback");
-        }
-        return $subject;
     }
 
     public function wrapInEnvelope($subject)
     {
-        return (!$subject instanceof PipeEnvelope) ? new PipeEnvelope($subject) : $subject;
+        return PipeEnvelope::wrap($subject);
     }
-    
+
     public function getInstantiatedPipes(): array
     {
         return $this->instantiatedPipes;
@@ -402,33 +470,64 @@ class PipeHub
         return $this->pipes;
     }
 
-    private function wrapInClosure($callback)
-    {
-        return function($subject) use ($callback) {
-            return $this->callViaContainer($callback, ['subject' => $subject]);
-        };
-    }
-
-    public function description($description)
-    {
-        $this->description = $description;
-
-        return $this;
-    }
-
-    public function getName(): string
+    public function getName(): ?string
     {
         return $this->name;
     }
 
-    public function getDescription(): string
+    public function getDescription(): ?string
     {
         return $this->description;
     }
 
-    public function getSubject(): PipeEnvelope
+    public function getSubject(): ?PipeEnvelope
     {
         return $this->subject;
     }
 
+    public function getSkipIf(): ?Closure
+    {
+        return $this->skipIfCallback;
+    }
+
+    public function getThen(): ?Closure
+    {
+        return $this->thenCallback;
+    }
+
+    public function getOnFailure(): ?Closure
+    {
+        return $this->onFailure;
+    }
+
+    /** @return array<string, class-string|null> */
+    public function getEvents(): array
+    {
+        return $this->broadcastEvents;
+    }
+
+    public function stopsOnFatal(): bool
+    {
+        return $this->stopOnFatal;
+    }
+
+    public function stopsOnError(): bool
+    {
+        return $this->stopOnError;
+    }
+
+    public function isFailureFatal(): bool
+    {
+        return $this->failureIsFatal;
+    }
+
+    public function isSkipped(): bool
+    {
+        return $this->skipThisHub;
+    }
+
+    public function persistsLogs(): bool
+    {
+        return $this->persistLogsOnFinalize;
+    }
 }
