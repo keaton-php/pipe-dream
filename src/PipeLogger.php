@@ -2,10 +2,17 @@
 
 namespace R1kon\PipeDream;
 
-use R1kon\PipeDream\PipeEnvelope;
+use Illuminate\Container\Container;
+use InvalidArgumentException;
 use R1kon\PipeDream\Contracts\PipeLoggerPersistStrategy;
+use R1kon\PipeDream\Contracts\PipeLoggerStrategy;
+use R1kon\PipeDream\Strategies\PipeLoggerJsonStrategy;
 
-class PipeLogger 
+/**
+ * The audit trail of one run: an ordered list of records, each with a time,
+ * a key (usually the rule class), a type and data.
+ */
+class PipeLogger
 {
     const INFO = 'info';
     const ERROR = 'error';
@@ -15,16 +22,30 @@ class PipeLogger
     const TIMER_END = 'timerEnd';
     const RETURN_VALUE = 'returnValue';
 
+    /** Record everything (the default). */
+    const LEVEL_EVERYTHING = 'everything';
+
+    /** Record everything except rule timers. */
+    const LEVEL_NO_TIMERS = 'no_timers';
+
+    /** Record only warnings, errors and fatals. */
+    const LEVEL_PROBLEMS = 'problems';
+
+    const LEVELS = [self::LEVEL_EVERYTHING, self::LEVEL_NO_TIMERS, self::LEVEL_PROBLEMS];
+
     protected $records = [];
-    protected $outputStrategy;
-    protected $persistLogsWith;
+
+    protected ?PipeLoggerStrategy $outputStrategy = null;
+
+    protected ?PipeLoggerPersistStrategy $persistLogsWith = null;
+
     protected $app;
-    
-    protected $level;
+
+    protected string $level = self::LEVEL_EVERYTHING;
 
     public function __construct($app = null)
     {
-        $this->app = $app ?? app();
+        $this->app = $app ?? Container::getInstance();
     }
 
     public function persistLogsWith(PipeLoggerPersistStrategy $strategy)
@@ -32,24 +53,45 @@ class PipeLogger
         return $this->persistLogsWith = $strategy;
     }
 
+    /**
+     * Persist with the given strategy, else the one set with persistLogsWith(),
+     * else the one bound to PipeLoggerPersistStrategy in the container. With
+     * none of those it does nothing and returns null.
+     */
     public function persist(PipeEnvelope $subject, ?PipeLoggerPersistStrategy $strategy = null)
     {
-        if($persistUsing = ($strategy ?? $this->persistLogsWith) ?? $this->getPersistDriverFromContainer())
+        if ($persistUsing = $strategy ?? $this->persistLogsWith ?? $this->getPersistDriverFromContainer()) {
             return $persistUsing->persist($subject);
+        }
+
+        return null;
     }
 
     protected function getPersistDriverFromContainer()
     {
-        if( ! $this->app->bound(PipeLoggerPersistStrategy::class))
+        if (! $this->app || ! $this->app->bound(PipeLoggerPersistStrategy::class)) {
             return null;
+        }
 
         return $this->app->make(PipeLoggerPersistStrategy::class);
     }
 
     public function setLevel($level)
     {
+        if (! in_array($level, self::LEVELS, true)) {
+            throw new InvalidArgumentException(
+                "Unknown log level [{$level}]. Use one of PipeLogger::LEVEL_EVERYTHING, LEVEL_NO_TIMERS or LEVEL_PROBLEMS."
+            );
+        }
+
         $this->level = $level;
+
         return $this;
+    }
+
+    public function level(): string
+    {
+        return $this->level;
     }
 
     public function records()
@@ -60,55 +102,92 @@ class PipeLogger
     public function setRecords($records)
     {
         $this->records = $records;
+
         return $this;
+    }
+
+    protected function shouldRecord(string $type): bool
+    {
+        switch ($this->level) {
+            case self::LEVEL_PROBLEMS:
+                return in_array($type, [self::WARNING, self::ERROR, self::FATAL], true);
+            case self::LEVEL_NO_TIMERS:
+                return ! in_array($type, [self::TIMER_START, self::TIMER_END], true);
+            default:
+                return true;
+        }
     }
 
     protected function addRecord($key, $type, $data, $context = [])
     {
+        if (! $this->shouldRecord($type)) {
+            return;
+        }
+
         $this->records[] = [
             'time' => microtime(true),
             'key' => $key,
             'type' => $type,
             'data' => $data,
-            'context' => $context
+            'context' => $context,
         ];
     }
 
     public function recordsByType($type)
     {
-        if(! is_array($type))
-            $type = [ $type ];
+        $types = (array) $type;
 
-        return collect($this->records)->filter(function($record) use ($type) {
-            return in_array($record['type'], $type);
+        return collect($this->records)->filter(function ($record) use ($types) {
+            return in_array($record['type'], $types, true);
         });
     }
 
+    /**
+     * @param  PipeLoggerStrategy|class-string<PipeLoggerStrategy>  $strategy
+     */
     public function setStrategy($strategy)
     {
-        if(is_string($strategy) && class_exists($strategy))
-            $strategy = new $strategy($this);
-        elseif(! is_object($strategy))
-            throw new \Exception("Invalid strategy provided");
+        if (is_string($strategy) && class_exists($strategy)) {
+            $strategy = new $strategy();
+        }
+
+        if (! $strategy instanceof PipeLoggerStrategy) {
+            throw new InvalidArgumentException('A log strategy must implement '.PipeLoggerStrategy::class.'.');
+        }
 
         $this->outputStrategy = $strategy;
+
         return $this;
     }
 
-    public function output($strategy = null)
+    public function strategy(): PipeLoggerStrategy
     {
-        if($strategy)
-            $this->setStrategy($strategy);
-
-        return $this->outputStrategy->output($this->records);
+        return $this->outputStrategy ??= new PipeLoggerJsonStrategy();
     }
 
+    /**
+     * The records in the strategy's format (JSON unless told otherwise).
+     */
+    public function output($strategy = null)
+    {
+        if ($strategy) {
+            $this->setStrategy($strategy);
+        }
+
+        return $this->strategy()->output($this->records);
+    }
+
+    /**
+     * Load records previously produced by output().
+     */
     public function rebuild($dehydrated, $strategy = null)
     {
-        if($strategy)
+        if ($strategy) {
             $this->setStrategy($strategy);
+        }
 
-        $this->records = $this->outputStrategy->rebuild($dehydrated);
+        $this->records = $this->strategy()->rebuild($dehydrated);
+
         return $this;
     }
 
@@ -129,10 +208,11 @@ class PipeLogger
 
     public function recordsByKey($key = null)
     {
-        if(!$key)
+        if (! $key) {
             return collect($this->records)->groupBy('key');
+        }
 
-        return collect($this->records)->filter(function($record) use ($key) {
+        return collect($this->records)->filter(function ($record) use ($key) {
             return $record['key'] == $key;
         });
     }
@@ -149,7 +229,7 @@ class PipeLogger
 
     public function timers()
     {
-        return $this->recordsByType([ self::TIMER_START, self::TIMER_END ]);
+        return $this->recordsByType([self::TIMER_START, self::TIMER_END]);
     }
 
     public function info($key, $data, $context = [])
@@ -186,5 +266,4 @@ class PipeLogger
     {
         $this->addRecord($key, self::TIMER_END, $message, $context);
     }
-
 }
