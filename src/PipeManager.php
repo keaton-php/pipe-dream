@@ -145,7 +145,11 @@ class PipeManager
             }
 
             if ($completed) {
-                $this->callback($this->thenCallback, ['subject' => $subject]);
+                try {
+                    $this->callback($this->thenCallback, ['subject' => $subject]);
+                } catch (PipeRuleRedirect $e) {
+                    throw $e->resolveRoute($this->app);
+                }
             }
 
             $subject->logger()->info('PipeManager:sendIt', 'Finalized result!');
