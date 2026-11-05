@@ -11,9 +11,11 @@ use Illuminate\Contracts\Container\Container;
 use R1kon\PipeDream\Exceptions\PipeRuleFatal;
 use R1kon\PipeDream\Exceptions\PipeHubException;
 use R1kon\PipeDream\PipeDreamPipeline as Pipeline;
+use R1kon\PipeDream\Concerns\PassesSubjectToCallbacks;
 
 class PipeHub
 {
+    use PassesSubjectToCallbacks;
 
     protected $app;
 
@@ -366,7 +368,7 @@ class PipeHub
 
     private function callViaContainer($callback, $parameters = [])
     {
-        return $this->app->call($callback, $parameters);
+        return $this->app->call($callback, $this->withSubjectParameter($callback, $parameters));
     }
 
     private function executeThenCallback($subject)

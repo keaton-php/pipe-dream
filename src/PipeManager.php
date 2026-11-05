@@ -7,9 +7,11 @@ use R1kon\PipeDream\Exceptions\PipeRuleLoadView;
 use R1kon\PipeDream\Exceptions\PipeRuleRedirect;
 use R1kon\PipeDream\Exceptions\PipeRuleFatal;
 use R1kon\PipeDream\Exceptions\PipeHubException;
+use R1kon\PipeDream\Concerns\PassesSubjectToCallbacks;
 
 class PipeManager 
 {
+    use PassesSubjectToCallbacks;
     protected $hubs = [];
     protected $subject;
     protected $name;
@@ -119,7 +121,7 @@ class PipeManager
     private function callViaContainer($callback, $parameters = [], $app = null)
     {
         $app ??= app();
-        return $app->call($callback, $parameters);
+        return $app->call($callback, $this->withSubjectParameter($callback, $parameters));
     }
 
     private function getPipeManagerContext()
