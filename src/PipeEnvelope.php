@@ -47,9 +47,18 @@ class PipeEnvelope
         $this->exceptionHandler = new PipeRuleExceptionHandler($this->app);
     }
 
-    public static function wrap($subject)
+    /**
+     * Wrap a subject, or hand back an envelope unchanged. $app is the
+     * container a new envelope resolves its services from.
+     */
+    public static function wrap($subject, $app = null)
     {
-        return $subject instanceof PipeEnvelope ? $subject : new static($subject);
+        return $subject instanceof PipeEnvelope ? $subject : new static($subject, $app);
+    }
+
+    public function container()
+    {
+        return $this->app;
     }
 
     /**
