@@ -171,7 +171,7 @@ A rule returns `SUCCESS`, `FAIL`, `FATAL_FAIL` or `SKIP` (any other value is rec
 | `$this->info()` / `$this->warning()` | | a log line against the rule |
 | `$this->error('…')` | `FAIL`, error logged | the next rule runs (see `stopOnError()`) |
 | `$this->fatal('…')` | `FATAL_FAIL`, fatal logged | the hub ends (see `stopOnFatal()`) |
-| any other exception | `FAIL`, error logged | the next rule runs, unless the rule called `$this->withoutErrorHandling()` |
+| any other exception or PHP error (`TypeError`, …) | `FAIL`, error logged | the next rule runs, unless the rule called `$this->withoutErrorHandling()` |
 
 The result is stored on the envelope under the rule's class, so later rules and `then()` callbacks can read it with `$click->get(MatchIpBlacklist::class)`. Set `public static $saveResultAs = 'ip_verdict';` to also store it under a name of your choosing, and `protected $errorsAreFatal = true;` to make a rule's errors fatal. Inside a rule, `$this->setBotScoreResult(0.4)` / `$this->getBotScoreResult()` read and write `bot_score` on the envelope.
 
@@ -325,7 +325,7 @@ class JsonFileLogStore implements PipeLoggerPersistStrategy
 | `->stopOnError()` | as default | the hub ends as a failure, `onFailure()` runs, the next hub runs | as default |
 | `->failureIsFatal()` | as default | as default (or the flow ends, with `stopOnError()`) | `onFailure()` runs, a fatal is logged and **the whole flow ends** |
 
-Only `withoutErrorHandling()` lets an ordinary exception escape a rule; otherwise it is logged as a `FAIL` and the rule's hub carries on. `onFailure(fn ($subject, $exception) => …)` receives the exception as `$exception`. When the flow ends early, `sendIt()` still returns the envelope (nothing is thrown at you) and the log is still persisted: check `$click->hasFatalErrors()`.
+"Exception" here means any `Throwable`, PHP errors such as `TypeError` included. Only `withoutErrorHandling()` lets one escape a rule; otherwise it is logged as a `FAIL` and the rule's hub carries on. `onFailure(fn ($subject, $exception) => …)` receives the exception as `$exception`. When the flow ends early, `sendIt()` still returns the envelope (nothing is thrown at you) and the log is still persisted: check `$click->hasFatalErrors()`.
 
 A rule that throws `PipeRuleRedirect` (`PipeRuleRedirect::toUrl($url)` / `::toRoute($name)`) or `PipeRuleLoadView` (`PipeRuleLoadView::load($view, $data)`) is never swallowed: the exception propagates out of the hub and the manager, after the log is persisted, so your controller can act on it.
 
