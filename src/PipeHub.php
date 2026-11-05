@@ -56,7 +56,7 @@ class PipeHub
         $this->app = $app;
     }
 
-    public static function create(Container $app = null)
+    public static function create(?Container $app = null)
     {
         $app = $app ?? (function_exists('app') ? app() : null);
         return new static($app);

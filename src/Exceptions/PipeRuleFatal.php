@@ -9,7 +9,7 @@ class PipeRuleFatal extends Exception
 
     protected $subject;
 
-    public function __construct($message, $subject, $code = 0, Exception $previous = null)
+    public function __construct($message, $subject, $code = 0, ?Exception $previous = null)
     {
         $this->subject = $subject;
         parent::__construct($message, $code, $previous);
