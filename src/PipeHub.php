@@ -392,10 +392,12 @@ class PipeHub
 
     protected function instantiate($pipe, bool $skip): PipeRule
     {
-        $rule = $pipe instanceof Closure ? new ClosurePipe($pipe) : $this->app->make($pipe);
+        // Every run gets its own copy of the rule, so an instance the
+        // container shares (a singleton) is never executed or changed, and
+        // nested or interleaved runs never share a subject, policy or
+        // container. The policy is still written in full on every run.
+        $rule = $pipe instanceof Closure ? new ClosurePipe($pipe) : clone $this->app->make($pipe);
 
-        // Written in full on every run: a rule the container shares between
-        // hubs or runs never keeps another hub's skip or stop policy.
         return $rule
             ->applyPolicy($skip, 'Skipped: the hub\'s skipIf() returned true', $this->stopOnError)
             ->setContainer($this->app);

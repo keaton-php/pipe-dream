@@ -2,15 +2,19 @@
 
 namespace Keaton\PipeDream\Tests\Unit;
 
+use Keaton\PipeDream\PipeEnvelope;
 use Keaton\PipeDream\PipeHub;
 use Keaton\PipeDream\PipeRule;
 use Keaton\PipeDream\Tests\Fixtures\Journal;
+use Keaton\PipeDream\Tests\Fixtures\Rules\ErrorRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\FirstRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\InjectedRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\MagicResultRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\NamedParameterRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\NoMethodRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\RunFunctionRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\SavesResultAsRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\SecondRule;
 use Keaton\PipeDream\Tests\TestCase;
 use stdClass;
 
@@ -66,6 +70,23 @@ class PipeRuleTest extends TestCase
         PipeHub::create()->addPipe(NamedParameterRule::class)->sendIt((object) ['id' => 9]);
 
         $this->assertSame(['click 9 at 21'], Journal::$entries);
+    }
+
+    public function test_apply_policy_replaces_the_whole_previous_policy(): void
+    {
+        // Hubs run a fresh copy per run, but the policy write must stand on
+        // its own too: nothing from an earlier call survives the next one.
+        $rule = new FirstRule();
+        $envelope = new PipeEnvelope(new stdClass());
+
+        $rule->applyPolicy(true, 'skipped by the first hub', true);
+        $this->assertTrue($rule->willSkip($envelope));
+
+        $rule->applyPolicy(false, null, false);
+        $this->assertFalse($rule->willSkip($envelope));
+
+        PipeHub::create()->addPipes([ErrorRule::class, SecondRule::class])->sendIt($envelope);
+        $this->assertSame(['ErrorRule', 'SecondRule'], Journal::$entries);
     }
 
     public function test_a_rule_without_a_run_method_is_logged_as_a_failure(): void
