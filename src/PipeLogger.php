@@ -210,12 +210,13 @@ class PipeLogger
 
     public function recordsByKey($key = null)
     {
-        if (! $key) {
+        // Only null means "group them all": 0, '0' and '' are keys too.
+        if ($key === null) {
             return collect($this->records)->groupBy('key');
         }
 
         return collect($this->records)->filter(function ($record) use ($key) {
-            return $record['key'] == $key;
+            return (string) $record['key'] === (string) $key;
         });
     }
 

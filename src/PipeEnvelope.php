@@ -218,7 +218,8 @@ class PipeEnvelope
      */
     public function get($key = null)
     {
-        if (! $key) {
+        // Only null means "everything": 0, '0' and '' are keys like any other.
+        if ($key === null) {
             return $this->savedAttributes;
         }
 
@@ -237,7 +238,7 @@ class PipeEnvelope
     private function ignoreSavedAttributeCase($key)
     {
         foreach ($this->savedAttributes as $savedKey => $value) {
-            if (Str::upper($savedKey) === Str::upper($key)) {
+            if (Str::upper((string) $savedKey) === Str::upper((string) $key)) {
                 return $value;
             }
         }
