@@ -26,6 +26,16 @@ class PipeHubException extends Exception
         return new static('PipeManager hubs must be PipeHub instances, got ['.get_debug_type($hub).'].');
     }
 
+    public static function sharedRuleNotCloneable(string $rule, ?\Throwable $previous = null): static
+    {
+        return new static(
+            "Rule [{$rule}] is bound as shared (singleton or instance) but cannot be copied for a run. "
+            .'Bind it non-shared, e.g. $app->bind('.class_basename($rule).'::class), or make it cloneable.',
+            0,
+            $previous
+        );
+    }
+
     public static function missingSubject(): static
     {
         return new static('No subject provided: call subject() or pass one to sendIt().');

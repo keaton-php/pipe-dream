@@ -362,6 +362,11 @@ class PipeHub
             $this->logInfo('PipeHub:sendIt', 'Loading view '.$e->view);
 
             throw $e;
+        } catch (PipeHubException $e) {
+            // A configuration error: never treated as a failure of this run.
+            $this->logError('PipeHub:sendIt', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeHubContext());
+
+            throw $e;
         } catch (Throwable $e) {
             $this->logError('PipeHub:sendIt', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeHubContext());
 
@@ -392,15 +397,51 @@ class PipeHub
 
     protected function instantiate($pipe, bool $skip): PipeRule
     {
-        // Every run gets its own copy of the rule, so an instance the
-        // container shares (a singleton) is never executed or changed, and
-        // nested or interleaved runs never share a subject, policy or
-        // container. The policy is still written in full on every run.
-        $rule = $pipe instanceof Closure ? new ClosurePipe($pipe) : clone $this->app->make($pipe);
+        if ($pipe instanceof Closure) {
+            $rule = new ClosurePipe($pipe);
+        } else {
+            $rule = $this->app->make($pipe);
 
+            // A rule the container shares (singleton, instance, scoped) is
+            // run as a copy, so the shared object is never executed or
+            // changed and nested runs never share a subject, policy or
+            // container. A transient resolution is already this run's own
+            // object and runs as it is.
+            if ($this->isSharedBinding($pipe)) {
+                $rule = $this->copyOfSharedRule($rule);
+            }
+        }
+
+        // The policy is written in full on every run either way.
         return $rule
             ->applyPolicy($skip, 'Skipped: the hub\'s skipIf() returned true', $this->stopOnError)
             ->setContainer($this->app);
+    }
+
+    protected function isSharedBinding(string $pipe): bool
+    {
+        // Illuminate's container (Laravel 9 to 13) answers this. Any other
+        // container cannot tell us, so assume shared and copy, the safe side.
+        if (! method_exists($this->app, 'isShared')) {
+            return true;
+        }
+
+        $abstract = method_exists($this->app, 'getAlias') ? $this->app->getAlias($pipe) : $pipe;
+
+        return (bool) $this->app->isShared($abstract);
+    }
+
+    protected function copyOfSharedRule(PipeRule $rule): PipeRule
+    {
+        if (! (new \ReflectionClass($rule))->isCloneable()) {
+            throw PipeHubException::sharedRuleNotCloneable(get_class($rule));
+        }
+
+        try {
+            return clone $rule;
+        } catch (Throwable $e) {
+            throw PipeHubException::sharedRuleNotCloneable(get_class($rule), $e);
+        }
     }
 
     protected function pipeWillSkip($subject, $pipe): bool
