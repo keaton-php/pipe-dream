@@ -11,7 +11,10 @@ use Keaton\PipeDream\PipeLogger;
 use Keaton\PipeDream\PipeManager;
 use Keaton\PipeDream\Strategies\DatabasePersistStrategy;
 use Keaton\PipeDream\Strategies\PipeLoggerSerializeStrategy;
+use Keaton\PipeDream\Exceptions\PipeRuleRedirect;
 use Keaton\PipeDream\Tests\Fixtures\Rules\ErrorRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\RedirectRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\ReturnsResourceRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\FatalRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\FirstRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\SecondRule;
@@ -164,6 +167,26 @@ class DatabasePersistTest extends TestCase
         $row = PipeDreamLog::first();
         $this->assertStringStartsWith('a:', $row->log);
         $this->assertEquals($envelope->logs(), $row->logger(new PipeLoggerSerializeStrategy())->records());
+    }
+
+    public function test_values_json_cannot_hold_never_stop_the_log_being_stored(): void
+    {
+        $envelope = PipeEnvelope::wrap(new stdClass())->persistWith(new DatabasePersistStrategy());
+
+        try {
+            PipeManager::create([
+                PipeHub::create()->addPipes([ReturnsResourceRule::class, RedirectRule::class]),
+            ])->subject($envelope)->sendIt();
+
+            $this->fail('The redirect should have propagated.');
+        } catch (PipeRuleRedirect $e) {
+            // The redirect is what the caller sees; persisting did not replace it.
+            $this->assertSame('https://example.test/landing', $e->redirectTo);
+        }
+
+        $records = PipeDreamLog::forRun($envelope->runId())->firstOrFail()->logger()->records();
+        $this->assertContains('resource(stream)', array_column($records, 'data'));
+        $this->assertContains(['score' => 'INF', 'ratio' => 'NAN'], array_column($records, 'data'));
     }
 
     public function test_a_model_that_is_not_a_pipe_dream_log_is_rejected(): void

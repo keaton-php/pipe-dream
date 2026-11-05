@@ -107,10 +107,9 @@ class PipeLoggerTest extends TestCase
 
     public function test_rebuilding_a_serialized_log_never_instantiates_classes(): void
     {
-        $logger = new PipeLogger();
-        $logger->returnValue('Rule', new Thermometer());
+        $tampered = serialize([['time' => 1.0, 'key' => 'Rule', 'type' => 'info', 'data' => new Thermometer(), 'context' => []]]);
 
-        $rebuilt = (new PipeLogger())->rebuild($logger->output(new PipeLoggerSerializeStrategy()), new PipeLoggerSerializeStrategy());
+        $rebuilt = (new PipeLogger())->rebuild($tampered, new PipeLoggerSerializeStrategy());
 
         $this->assertInstanceOf(\__PHP_Incomplete_Class::class, $rebuilt->records()[0]['data']);
     }
