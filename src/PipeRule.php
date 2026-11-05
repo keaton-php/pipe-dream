@@ -2,15 +2,26 @@
 
 namespace R1kon\PipeDream;
 
-use R1kon\PipeDream\Exceptions\PipeRuleLoadView;
+use BadMethodCallException;
+use Closure;
+use Illuminate\Container\Container;
 use Illuminate\Support\Str;
-use R1kon\PipeDream\PipeRuleResult;
-use R1kon\PipeDream\Exceptions\PipeRuleRedirect;
 use R1kon\PipeDream\Exceptions\PipeRuleError;
-use R1kon\PipeDream\Exceptions\PipeRuleExceptionHandler;
 use R1kon\PipeDream\Exceptions\PipeRuleFatal;
+use R1kon\PipeDream\Exceptions\PipeRuleLoadView;
+use R1kon\PipeDream\Exceptions\PipeRuleRedirect;
 
-
+/**
+ * One step of a flow. Extend it and add a public method named after the
+ * class (or name it in static $runFunction); it is called through the
+ * container, so it can type-hint its dependencies, and receives the
+ * envelope as $subject.
+ *
+ * Return SUCCESS, FAIL, FATAL_FAIL or SKIP (anything else is recorded as
+ * it is), or call $this->error() / $this->fatal() / $this->skip(). The
+ * result is saved on the envelope under the rule's class name (and under
+ * static $saveResultAs when set).
+ */
 abstract class PipeRule
 {
     const ERROR = 'error';
@@ -22,36 +33,86 @@ abstract class PipeRule
     public const SKIP = 4;
 
     public static $name = 'PipeRule';
-    public static $description = "New base pipe rule";
+    public static $description = 'New base pipe rule';
     public static $runFunction = null;
     public static $saveResultAs = null;
 
     protected $defaultResult = self::SUCCESS;
 
+    /** Rethrow unexpected exceptions instead of logging them (see withoutErrorHandling()). */
     protected $rethrowErrors = false;
+
+    /** Treat a PipeRuleError raised by this rule as a PipeRuleFatal. */
     protected $errorsAreFatal = false;
+
+    /** End the hub when this rule raises a PipeRuleError (set by PipeHub::stopOnError()). */
     protected $stopOnError = false;
+
     protected $shouldSkip = false;
-    
+
+    protected ?string $skipReason = null;
+
+    protected bool $skippedItself = false;
+
+    protected bool $wasSkipped = false;
+
     protected $subject;
 
-    public function __construct($errorsAreFatal = false, $stopOnError = false, $shouldSkip = false)
+    public function __construct(?bool $errorsAreFatal = null, ?bool $stopOnError = null, ?bool $shouldSkip = null)
     {
-        $this->stopOnError = $stopOnError;
-        $this->errorsAreFatal = $errorsAreFatal;
-        $this->shouldSkip = $shouldSkip;
+        // Only override the class defaults when told to, so a subclass can
+        // declare `protected $errorsAreFatal = true;`.
+        $this->errorsAreFatal = $errorsAreFatal ?? $this->errorsAreFatal;
+        $this->stopOnError = $stopOnError ?? $this->stopOnError;
+        $this->shouldSkip = $shouldSkip ?? $this->shouldSkip;
     }
 
-    public function shouldSkip($skip = true)
+    /**
+     * Mark this rule to be skipped: it is logged as SKIP and never executed.
+     */
+    public function shouldSkip($skip = true, ?string $reason = null)
     {
         $this->shouldSkip = $skip;
+        $this->skipReason = $reason;
+
+        return $this;
+    }
+
+    /**
+     * Whether this rule will be skipped (not executed) for the given subject.
+     */
+    public function willSkip($subject): bool
+    {
+        return $this->shouldSkip || ($subject instanceof PipeEnvelope && $subject->skipsAll());
+    }
+
+    /**
+     * Whether the last run skipped this rule without executing it.
+     */
+    public function wasSkipped(): bool
+    {
+        return $this->wasSkipped;
+    }
+
+    public function setStopOnError(bool $stop = true)
+    {
+        $this->stopOnError = $stop;
+
+        return $this;
+    }
+
+    /**
+     * The key this rule's log records and result are stored under.
+     */
+    public function ruleKey(): string
+    {
+        return static::class;
     }
 
     public function getExtendedClassMethods()
     {
         $extendedClass = get_called_class();
-        $reflectionClass = new \ReflectionClass($extendedClass);
-        $methods = $reflectionClass->getMethods(\ReflectionMethod::IS_PUBLIC);
+        $methods = (new \ReflectionClass($extendedClass))->getMethods(\ReflectionMethod::IS_PUBLIC);
 
         $extendedClassMethods = [];
         foreach ($methods as $method) {
@@ -65,84 +126,104 @@ abstract class PipeRule
 
     private function getExecuteFunctionName()
     {
-        //Try what's given to us first
-        if(is_callable([$this, static::$runFunction]))
+        if (static::$runFunction && is_callable([$this, static::$runFunction])) {
             return static::$runFunction;
-        
-        //Try to find it based on class name
-        if($method = collect($this->getExtendedClassMethods())
-            ->filter(fn($method) => Str::upper($method) === Str::upper(class_basename($this)))
-            ->first())
+        }
+
+        $expected = Str::upper(class_basename($this));
+
+        foreach ($this->getExtendedClassMethods() as $method) {
+            if (Str::upper($method) === $expected) {
                 return $method;
+            }
+        }
 
         return null;
+    }
+
+    protected function container()
+    {
+        return Container::getInstance();
     }
 
     protected function runFromContainer($method, $parameters = [])
     {
-        if(method_exists($this, $method))
-            return app()->call([$this, $method], $parameters);
-        
+        if (method_exists($this, $method)) {
+            return $this->container()->call([$this, $method], $parameters);
+        }
+
         return null;
-       // throw new \BadMethodCallException("Method {$method} does not exist in " . get_class($this));
     }
 
     public function execute($subject)
     {
-        if($this->shouldSkip)
-        {
-            $this->skip("Skipping rule");
-            return $subject;
+        $this->skippedItself = false;
+
+        if (! $method = $this->getExecuteFunctionName()) {
+            $this->error(sprintf(
+                'Rule %s has no run method: add a public method named %s() or set static $runFunction',
+                static::class,
+                lcfirst(class_basename($this))
+            ));
         }
 
-        if(!$method = $this->getExecuteFunctionName())
-            $this->error("No execute function found - skipping");
+        $result = $this->container()->call([$this, $method], ['subject' => $subject]) ?? $this->defaultResult;
 
-        $result = app()->call([$this, $method], [
-            'subject' => $subject
-        ]) ?? $this->defaultResult;
-        
-        $this->logExecutionResult($subject, $this->ruleClass(), $result);
+        $this->logExecutionResult($subject, $this->ruleKey(), $this->skippedItself ? self::SKIP : $result);
 
         return $subject;
     }
 
     protected function logExecutionResult($subject, $key, $result)
     {
-        $subject->saveRuleResult(new PipeRuleResult($this->ruleClass(), $result));
+        $subject->saveRuleResult(new PipeRuleResult($key, $result));
         $subject->set($key, $result);
+
+        if (static::$saveResultAs) {
+            $subject->set(static::$saveResultAs, $result);
+        }
     }
 
-    public function handle($subject, \Closure $next)
+    public function handle($subject, Closure $next)
     {
         $this->register($subject);
+        $this->wasSkipped = $this->willSkip($subject);
 
         try {
-            //execute the rule
-            $subject = $this->execute($subject);
+            if ($this->wasSkipped) {
+                $this->info($this->skipReason ?? ($this->shouldSkip ? 'Skipped' : 'Skipped: skipAll() was called'));
+                $this->logExecutionResult($subject, $this->ruleKey(), self::SKIP);
+            } else {
+                $subject = $this->execute($subject) ?? $subject;
+            }
         } catch (PipeRuleError $e) {
-            $this->registerException($e);
-            if($this->stopOnError)
-                throw $e;
+            if ($this->errorsAreFatal) {
+                $this->logExecutionResult($this->subject, $this->ruleKey(), self::FATAL_FAIL);
+                $this->registerException($e, self::FATAL);
 
-        } catch(PipeRuleFatal $e) {
+                throw new PipeRuleFatal($e->getMessage(), $this->subject, $e->getCode(), $e);
+            }
+
+            $this->logExecutionResult($this->subject, $this->ruleKey(), self::FAIL);
+            $this->registerException($e);
+
+            if ($this->stopOnError) {
+                throw $e;
+            }
+        } catch (PipeRuleFatal $e) {
+            $this->logExecutionResult($this->subject, $this->ruleKey(), self::FATAL_FAIL);
             $this->registerException($e, self::FATAL);
+
             throw $e;
-
-        } catch(PipeRuleRedirect $e) {
-            throw $e; //just rethrow it
-
-        } catch(PipeRuleLoadView $e) {
-            throw $e; //just rethrow it
-
+        } catch (PipeRuleRedirect|PipeRuleLoadView $e) {
+            throw $e;
         } catch (\Exception $e) {
-
+            $this->logExecutionResult($this->subject, $this->ruleKey(), self::FAIL);
             $this->registerException($e);
-            $this->logExecutionResult($this->subject, $this->ruleClass(), self::FAIL);
-            
-            if($this->rethrowErrors)
-                throw $e;
 
+            if ($this->rethrowErrors) {
+                throw $e;
+            }
         } finally {
             $this->unregister();
         }
@@ -150,11 +231,16 @@ abstract class PipeRule
         return $next($subject);
     }
 
+    /** @deprecated use ruleKey() */
     protected function ruleClass()
     {
-        return get_class($this);
+        return $this->ruleKey();
     }
 
+    /**
+     * Let unexpected exceptions escape this rule (the hub then treats them as
+     * a failure) instead of logging them and carrying on.
+     */
     protected function withoutErrorHandling()
     {
         $this->rethrowErrors = true;
@@ -162,9 +248,7 @@ abstract class PipeRule
 
     protected function registerException($exception, $type = self::ERROR)
     {
-        $this->subject->registerException($exception, $type, $this->ruleClass());
-
-       // $this->log($type, $message);
+        $this->subject->registerException($exception, $type, $this->ruleKey());
     }
 
     protected function register($subject)
@@ -183,31 +267,46 @@ abstract class PipeRule
         $this->log('info', $message);
     }
 
-    protected function fatal($message)
-    {
-        $this->logExecutionResult($this->subject, $this->ruleClass(), self::FATAL_FAIL);
-        throw new PipeRuleFatal($message, $this->subject);
-    }
-
-    protected function error($message)
-    {
-        $this->logExecutionResult($this->subject, $this->ruleClass(), self::FAIL);
-        throw new PipeRuleError($message, $this->subject);
-    }
-
-    protected function skip($message)
-    {
-        $this->logExecutionResult($this->subject, $this->ruleClass(), self::SKIP);
-    }
-
     protected function warning($message)
     {
         $this->log('warning', $message);
     }
 
+    /**
+     * Stop: the result is FATAL_FAIL and the hub ends (the flow too, with
+     * stopOnFatal()).
+     */
+    protected function fatal($message)
+    {
+        throw new PipeRuleFatal($message, $this->subject);
+    }
+
+    /**
+     * Fail: the result is FAIL and the hub carries on (unless stopOnError()
+     * or $errorsAreFatal).
+     */
+    protected function error($message)
+    {
+        throw new PipeRuleError($message, $this->subject);
+    }
+
+    /**
+     * Record this rule as skipped, with a reason: `return $this->skip('...')`.
+     */
+    protected function skip($message = null)
+    {
+        $this->skippedItself = true;
+
+        if ($message) {
+            $this->info($message);
+        }
+
+        return self::SKIP;
+    }
+
     protected function log($level, $message)
     {
-        $this->subject->logger()->{$level}($this->ruleClass(), $message);
+        $this->subject->logger()->{$level}($this->ruleKey(), $message);
     }
 
     public function __set($name, $value)
@@ -217,23 +316,28 @@ abstract class PipeRule
 
     public function __get($name)
     {
-        return $this->subject->get($name);
+        return $this->subject?->get($name);
     }
 
+    /**
+     * set{Name}Result($value) / get{Name}Result() store and read shared state
+     * on the envelope under the snake_cased name: setBotScoreResult(0.4) is
+     * set('bot_score', 0.4).
+     */
     public function __call($method, $arguments)
     {
-        if (preg_match('/^(set|get)([A-Za-z]+)Result$/', $method, $matches)) {
-            $action = $matches[1];
-            $key = strtolower(preg_replace('/\B([A-Z])/', '_$1', $matches[2]));
+        if (preg_match('/^(set|get)([A-Za-z0-9]+)Result$/', $method, $matches)) {
+            $key = Str::snake($matches[2]);
 
-            if ($action === 'set') {
-                return $this->subject->session()->set($key, $arguments[0]);
-            } elseif ($action === 'get') {
-                return $this->subject->session()->get($key);
+            if (! $this->subject instanceof PipeEnvelope) {
+                throw new BadMethodCallException("{$method}() can only be used while the rule is running.");
             }
+
+            return $matches[1] === 'set'
+                ? $this->subject->set($key, $arguments[0] ?? null)
+                : $this->subject->get($key);
         }
 
-        throw new \BadMethodCallException("Method {$method} does not exist.");
+        throw new BadMethodCallException(sprintf('Method %s::%s does not exist.', static::class, $method));
     }
-
 }
