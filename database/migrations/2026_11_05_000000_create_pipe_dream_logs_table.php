@@ -12,7 +12,11 @@ return new class extends Migration
             $table->id();
             $table->uuid('run_id')->unique();
             $table->string('flow')->nullable()->index();
-            $table->nullableMorphs('subject');
+            // A string id, so integer, UUID and ULID keys all fit without
+            // depending on the application's morph key settings.
+            $table->string('subject_type')->nullable();
+            $table->string('subject_id')->nullable();
+            $table->index(['subject_type', 'subject_id']);
             $table->longText('log');
             $table->boolean('has_errors')->default(false)->index();
             $table->boolean('has_fatals')->default(false)->index();

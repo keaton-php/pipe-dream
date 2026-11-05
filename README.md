@@ -249,7 +249,7 @@ php artisan vendor:publish --tag=pipe-dream-migrations
 php artisan migrate
 ```
 
-It creates `pipe_dream_logs`: `run_id` (a unique uuid), `flow` (the manager's name), a nullable `subject` morph (filled in when the subject is a saved Eloquent model), `log`, `has_errors`, `has_fatals` and timestamps.
+It creates `pipe_dream_logs`: `run_id` (a unique uuid), `flow` (the manager's name), a nullable `subject_type` / `subject_id` pair (filled in when the subject is a saved Eloquent model; `subject_id` is a string, so integer, UUID and ULID keys all work), `log`, `has_errors`, `has_fatals` and timestamps.
 
 ```php
 use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
