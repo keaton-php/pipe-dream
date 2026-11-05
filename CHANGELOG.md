@@ -40,6 +40,7 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ### Changed
 
+- **Package name.** The package is `keaton-php/pipe-dream` and its namespace is `Keaton\PipeDream`; update your `composer.json` and `use` statements from the old pre-release name.
 - **Fatal semantics.** Previously a fatal always ended the whole flow. Now, without `stopOnFatal()`, a fatal ends the current hub (its remaining pipes and its `then()` do not run), a warning is logged, and the flow continues with the next hub. With `stopOnFatal()` the fatal ends the whole flow and the manager's `then()` does not run. Add `stopOnFatal()` to every hub whose fatals must end the flow.
 - A standalone hub (`$hub->sendIt()`) no longer rethrows a fatal; it returns the envelope. Use `hasFatalErrors()`.
 - `failureIsFatal()` is now a flag that works alongside `onFailure()` (it used to replace the `onFailure()` callback). A failure in that hub runs `onFailure()`, logs a fatal and ends the flow.
