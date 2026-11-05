@@ -266,7 +266,7 @@ $this->app->bind(PipeLoggerPersistStrategy::class, DatabasePersistStrategy::clas
 
 ```json
 [{"time":1762372800.4121,"key":"PipeManager:sendIt","type":"info","data":"Sending subject through all hubs","context":{"name":"Ad click intake","description":null}},
- {"time":1762372800.4127,"key":"App\\Intake\\Rules\\EnforceCampaignCountries","type":"fatal","data":"Visitor is in CA; campaign targets US [/app/Intake/Rules/EnforceCampaignCountries.php | line 24]","context":{"exception":"Keaton\\PipeDream\\Exceptions\\PipeRuleFatal"}}]
+ {"time":1762372800.4127,"key":"App\\Intake\\Rules\\EnforceCampaignCountries","type":"fatal","data":"Visitor is in CA; campaign targets US [/app/Intake/Rules/EnforceCampaignCountries.php | line 24]","context":{"exception":"Keaton\\PipeDream\\Exceptions\\PipeRuleFatal","file":"/app/Intake/Rules/EnforceCampaignCountries.php","line":24}}]
 ```
 
 Pass `new DatabasePersistStrategy(new PipeLoggerSerializeStrategy())` to store PHP `serialize()` output instead (rebuilt with `allowed_classes => false`, so a stored log can never instantiate objects), or your own `PipeLoggerStrategy`.
