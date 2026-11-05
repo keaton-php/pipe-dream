@@ -14,10 +14,17 @@ All notable changes to this package are documented here. The format follows [Kee
 - Read-only getters for tooling: `PipeManager::getName()`, `getDescription()`, `getHubs()`, `getThen()`; `PipeHub::getSkipIf()`, `getThen()`, `getOnFailure()`, `getEvents()`, `stopsOnFatal()`, `stopsOnError()`, `isFailureFatal()`, `isSkipped()`, `persistsLogs()`.
 - `PipeManager::persistLogs()`.
 - `ClosurePipe`: closures added to a hub are timed, logged and recorded like rules.
-- A test suite on Orchestra Testbench, run against Laravel 9, 10, 11, 12 and 13.
+- A test suite on Orchestra Testbench, and a GitHub Actions matrix that runs it on PHP 8.1–8.4 against Laravel 9–13.
+- `Support\LogValue`, which makes every logged value JSON-safe.
+- `PipeEnvelope::wrap($subject, $container)` and `PipeEnvelope::container()`.
 
 ### Fixed
 
+- PHP errors such as `TypeError` and `ArgumentCountError` escaped rules, hubs and the manager: only `\Exception` was caught, so they left no `FAIL` result and skipped `onFailure()` and `failureIsFatal()`. Every `Throwable` is now handled, after the fatal, redirect and load-view cases.
+- A hub given its own container resolved rules from it but called rule methods and closure pipes, and built envelopes, through the global container. Everything in a run now uses the hub's container (and a manager's envelope uses the manager's).
+- A rule bound as a singleton kept one hub's `skipIf()` skip or `stopOnError()` setting in later hubs and runs. The hub now writes its whole per-run policy on every run, separately from the rule's own settings, and `withoutErrorHandling()` lasts for one run.
+- `pipe_dream_logs.subject_id` was an integer (via `nullableMorphs()`), so UUID and ULID subjects could fail. It is now a nullable string with a composite `subject_type`/`subject_id` index.
+- A rule returning a resource, a recursive object, `INF` or `NAN` made persisting the log throw, which could replace a redirect or the flow's real outcome. Logged values are now made JSON-safe as they are recorded.
 - A closure pipe ignored `$next`, so no pipe after it ever ran. Closures now run and the chain continues.
 - `stopOnFatal()` was stored and never read. See "Changed" for the semantics it now has.
 - `PipeEnvelope::skipAll()` set a flag nothing read. Every remaining pipe, in this hub and every later hub, is now logged as skipped and not executed.
@@ -50,6 +57,7 @@ All notable changes to this package are documented here. The format follows [Kee
 - Per-pipe events are constructed with the envelope and the rule's key (previously the raw subject); hub events with the envelope.
 - `then()` callbacks are no longer rebound to the hub: `$this` inside them is what it was where you wrote them.
 - `PipeManager::sendIt()` without a subject throws `PipeHubException`, like `PipeHub::sendIt()`.
+- Requires PHP 8.1 or later (the versions the CI matrix covers).
 - Dependencies now declare the components the code uses: `illuminate/container`, `illuminate/contracts`, `illuminate/database`, `illuminate/support` and `ramsey/uuid`.
 
 ### Removed
