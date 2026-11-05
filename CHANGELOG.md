@@ -67,7 +67,8 @@ All notable changes to this package are documented here. The format follows [Kee
 - `then()` callbacks are no longer rebound to the hub: `$this` inside them is what it was where you wrote them.
 - `PipeManager::sendIt()` without a subject throws `PipeHubException`, like `PipeHub::sendIt()`.
 - A `PipeRuleRedirect` from `toRoute()` carries `$route` and `$parameters`, and its `redirectTo` is filled in when it passes through a rule, hub or manager (or by calling `resolveRoute($container)` yourself).
-- Each run executes a clone of the rule the container returns. State a rule sets on itself during a run stays on that run's copy; keep cross-run state in an injected service instead.
+- A rule bound as shared (singleton, instance, scoped) runs as a per-run clone; a transient binding runs as the object the container returned. A shared rule that cannot be cloned (private `__clone()`, or a `__clone()` that throws) makes the flow throw a `PipeHubException` naming the rule, instead of failing silently.
+- `PipeHubException` (a configuration error) is never treated as a hub failure: it is logged and rethrown out of the rule, hub and manager.
 - Requires PHP 8.1 or later (the versions the CI matrix covers).
 - Dependencies now declare the components the code uses: `illuminate/container`, `illuminate/contracts`, `illuminate/database`, `illuminate/support` and `ramsey/uuid`.
 
