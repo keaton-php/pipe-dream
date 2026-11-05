@@ -1,5 +1,5 @@
 {
-    "name": "r1kon/pipe-dream",
+    "name": "keaton-php/pipe-dream",
     "description": "Pipe-driven development for Laravel: business flows that read like a table of contents, with every step logged, timed and explainable.",
     "type": "library",
     "license": "MIT",
@@ -24,12 +24,12 @@
     },
     "autoload": {
         "psr-4": {
-            "R1kon\\PipeDream\\": "src/"
+            "Keaton\\PipeDream\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "R1kon\\PipeDream\\Tests\\": "tests/"
+            "Keaton\\PipeDream\\Tests\\": "tests/"
         }
     },
     "scripts": {
@@ -37,7 +37,7 @@
     },
     "extra": {
         "laravel": {
-            "providers": ["R1kon\\PipeDream\\PipeDreamServiceProvider"]
+            "providers": ["Keaton\\PipeDream\\PipeDreamServiceProvider"]
         }
     },
     "config": {

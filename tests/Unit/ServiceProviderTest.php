@@ -1,10 +1,10 @@
 <?php
 
-namespace R1kon\PipeDream\Tests\Unit;
+namespace Keaton\PipeDream\Tests\Unit;
 
 use Illuminate\Support\ServiceProvider;
-use R1kon\PipeDream\PipeDreamServiceProvider;
-use R1kon\PipeDream\Tests\TestCase;
+use Keaton\PipeDream\PipeDreamServiceProvider;
+use Keaton\PipeDream\Tests\TestCase;
 
 class ServiceProviderTest extends TestCase
 {

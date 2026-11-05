@@ -1,9 +1,9 @@
 <?php
 
-namespace R1kon\PipeDream\Tests\Fixtures;
+namespace Keaton\PipeDream\Tests\Fixtures;
 
-use R1kon\PipeDream\Exceptions\PipeExceptionHandler;
-use R1kon\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\Exceptions\PipeExceptionHandler;
+use Keaton\PipeDream\PipeEnvelope;
 
 class LimitHandler implements PipeExceptionHandler
 {

@@ -1,8 +1,8 @@
 <?php
 
-namespace R1kon\PipeDream\Tests\Fixtures\Events;
+namespace Keaton\PipeDream\Tests\Fixtures\Events;
 
-use R1kon\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\PipeEnvelope;
 
 class BeforeHub
 {

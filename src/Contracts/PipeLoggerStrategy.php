@@ -1,6 +1,6 @@
 <?php
 
-namespace R1kon\PipeDream\Contracts;
+namespace Keaton\PipeDream\Contracts;
 
 /**
  * Turns log records into something storable (a string) and back.

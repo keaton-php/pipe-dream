@@ -1,8 +1,8 @@
 <?php
 
-namespace R1kon\PipeDream\Strategies;
+namespace Keaton\PipeDream\Strategies;
 
-use R1kon\PipeDream\Contracts\PipeLoggerStrategy;
+use Keaton\PipeDream\Contracts\PipeLoggerStrategy;
 
 /**
  * PHP serialize() format. Rebuilding never instantiates classes: any object

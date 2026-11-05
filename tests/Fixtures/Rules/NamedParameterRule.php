@@ -1,11 +1,11 @@
 <?php
 
-namespace R1kon\PipeDream\Tests\Fixtures\Rules;
+namespace Keaton\PipeDream\Tests\Fixtures\Rules;
 
-use R1kon\PipeDream\PipeEnvelope;
-use R1kon\PipeDream\PipeRule;
-use R1kon\PipeDream\Tests\Fixtures\Journal;
-use R1kon\PipeDream\Tests\Fixtures\Thermometer;
+use Keaton\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\PipeRule;
+use Keaton\PipeDream\Tests\Fixtures\Journal;
+use Keaton\PipeDream\Tests\Fixtures\Thermometer;
 
 class NamedParameterRule extends PipeRule
 {

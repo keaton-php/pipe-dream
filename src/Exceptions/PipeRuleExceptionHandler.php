@@ -1,9 +1,9 @@
 <?php
 
-namespace R1kon\PipeDream\Exceptions;
+namespace Keaton\PipeDream\Exceptions;
 
 use Illuminate\Contracts\Container\Container;
-use R1kon\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\PipeEnvelope;
 use Throwable;
 
 /**

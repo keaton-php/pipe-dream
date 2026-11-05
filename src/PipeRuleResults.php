@@ -1,5 +1,5 @@
 <?php
-namespace R1kon\PipeDream;
+namespace Keaton\PipeDream;
 
 use Illuminate\Support\Collection;
 

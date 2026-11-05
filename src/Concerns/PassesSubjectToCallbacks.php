@@ -1,6 +1,6 @@
 <?php
 
-namespace R1kon\PipeDream\Concerns;
+namespace Keaton\PipeDream\Concerns;
 
 trait PassesSubjectToCallbacks
 {

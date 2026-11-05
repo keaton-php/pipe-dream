@@ -1,8 +1,8 @@
 <?php
 
-namespace R1kon\PipeDream\Strategies;
+namespace Keaton\PipeDream\Strategies;
 
-use R1kon\PipeDream\Contracts\PipeLoggerStrategy;
+use Keaton\PipeDream\Contracts\PipeLoggerStrategy;
 
 /**
  * JSON format, the default. Records rebuild as plain arrays; objects in a

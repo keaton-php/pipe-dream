@@ -1,6 +1,6 @@
 <?php
 
-namespace R1kon\PipeDream\Tests\Fixtures;
+namespace Keaton\PipeDream\Tests\Fixtures;
 
 use Illuminate\Database\Eloquent\Model;
 

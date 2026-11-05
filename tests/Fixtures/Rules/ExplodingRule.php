@@ -1,9 +1,9 @@
 <?php
 
-namespace R1kon\PipeDream\Tests\Fixtures\Rules;
+namespace Keaton\PipeDream\Tests\Fixtures\Rules;
 
-use R1kon\PipeDream\PipeRule;
-use R1kon\PipeDream\Tests\Fixtures\Journal;
+use Keaton\PipeDream\PipeRule;
+use Keaton\PipeDream\Tests\Fixtures\Journal;
 
 class ExplodingRule extends PipeRule
 {

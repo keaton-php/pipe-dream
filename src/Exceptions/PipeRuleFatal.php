@@ -1,6 +1,6 @@
 <?php
 
-namespace R1kon\PipeDream\Exceptions;
+namespace Keaton\PipeDream\Exceptions;
 
 use Exception;
 use Throwable;

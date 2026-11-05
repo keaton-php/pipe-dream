@@ -1,10 +1,10 @@
 <?php
 
-namespace R1kon\PipeDream\Tests;
+namespace Keaton\PipeDream\Tests;
 
 use Orchestra\Testbench\TestCase as Orchestra;
-use R1kon\PipeDream\PipeDreamServiceProvider;
-use R1kon\PipeDream\Tests\Fixtures\Journal;
+use Keaton\PipeDream\PipeDreamServiceProvider;
+use Keaton\PipeDream\Tests\Fixtures\Journal;
 
 abstract class TestCase extends Orchestra
 {

@@ -1,17 +1,17 @@
 <?php
 
-namespace R1kon\PipeDream\Tests\Feature;
+namespace Keaton\PipeDream\Tests\Feature;
 
-use R1kon\PipeDream\ClosurePipe;
-use R1kon\PipeDream\Exceptions\PipeRuleFatal;
-use R1kon\PipeDream\PipeHub;
-use R1kon\PipeDream\PipeManager;
-use R1kon\PipeDream\PipeRule;
-use R1kon\PipeDream\Tests\Fixtures\Journal;
-use R1kon\PipeDream\Tests\Fixtures\Rules\FirstRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\SecondRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\ThirdRule;
-use R1kon\PipeDream\Tests\TestCase;
+use Keaton\PipeDream\ClosurePipe;
+use Keaton\PipeDream\Exceptions\PipeRuleFatal;
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeManager;
+use Keaton\PipeDream\PipeRule;
+use Keaton\PipeDream\Tests\Fixtures\Journal;
+use Keaton\PipeDream\Tests\Fixtures\Rules\FirstRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\SecondRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\ThirdRule;
+use Keaton\PipeDream\Tests\TestCase;
 use stdClass;
 
 class ClosurePipeTest extends TestCase

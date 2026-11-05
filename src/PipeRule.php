@@ -1,16 +1,16 @@
 <?php
 
-namespace R1kon\PipeDream;
+namespace Keaton\PipeDream;
 
 use BadMethodCallException;
 use Closure;
 use Illuminate\Container\Container;
 use Illuminate\Support\Str;
-use R1kon\PipeDream\Concerns\PassesSubjectToCallbacks;
-use R1kon\PipeDream\Exceptions\PipeRuleError;
-use R1kon\PipeDream\Exceptions\PipeRuleFatal;
-use R1kon\PipeDream\Exceptions\PipeRuleLoadView;
-use R1kon\PipeDream\Exceptions\PipeRuleRedirect;
+use Keaton\PipeDream\Concerns\PassesSubjectToCallbacks;
+use Keaton\PipeDream\Exceptions\PipeRuleError;
+use Keaton\PipeDream\Exceptions\PipeRuleFatal;
+use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
+use Keaton\PipeDream\Exceptions\PipeRuleRedirect;
 
 /**
  * One step of a flow. Extend it and add a public method named after the

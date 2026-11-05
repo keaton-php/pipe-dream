@@ -1,6 +1,6 @@
 <?php
 
-namespace R1kon\PipeDream\Tests\Fixtures;
+namespace Keaton\PipeDream\Tests\Fixtures;
 
 /**
  * Collects what ran, in order, so tests can assert on execution order.

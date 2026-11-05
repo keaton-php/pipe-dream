@@ -1,9 +1,9 @@
 <?php
 
-namespace R1kon\PipeDream\Tests\Fixtures;
+namespace Keaton\PipeDream\Tests\Fixtures;
 
-use R1kon\PipeDream\Contracts\PipeLoggerPersistStrategy;
-use R1kon\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
+use Keaton\PipeDream\PipeEnvelope;
 
 class CountingPersist implements PipeLoggerPersistStrategy
 {
