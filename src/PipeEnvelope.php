@@ -163,8 +163,16 @@ class PipeEnvelope
 
     public function registerException(Throwable $exception, $type, $ruleClass)
     {
-        $exceptionMessage = sprintf('%s [%s | line %s]', $exception->getMessage(), $exception->getFile(), $exception->getLine());
-        $this->logger->{$type}($ruleClass, $exceptionMessage, ['exception' => get_class($exception)]);
+        // A rule's own fatal()/error() records the rule's call site, not PipeRule.
+        $file = method_exists($exception, 'originFile') ? $exception->originFile() : $exception->getFile();
+        $line = method_exists($exception, 'originLine') ? $exception->originLine() : $exception->getLine();
+
+        $exceptionMessage = sprintf('%s [%s | line %s]', $exception->getMessage(), $file, $line);
+        $this->logger->{$type}($ruleClass, $exceptionMessage, [
+            'exception' => get_class($exception),
+            'file' => $file,
+            'line' => $line,
+        ]);
 
         return $this->exceptionHandler->handle($this, $exception);
     }

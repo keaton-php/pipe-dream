@@ -220,11 +220,13 @@ abstract class PipeRule
         $this->skippedItself = false;
 
         if (! $method = $this->getExecuteFunctionName()) {
-            $this->error(sprintf(
+            $class = new \ReflectionClass($this);
+
+            throw (new PipeRuleError(sprintf(
                 'Rule %s has no run method: add a public method named %s() or set static $runFunction',
                 static::class,
                 lcfirst(class_basename($this))
-            ));
+            ), $subject))->setOrigin((string) $class->getFileName(), (int) $class->getStartLine());
         }
 
         $result = $this->container()->call([$this, $method], $this->withSubjectParameter([$this, $method], ['subject' => $subject])) ?? $this->defaultResult;
@@ -262,7 +264,8 @@ abstract class PipeRule
                 $this->logExecutionResult($this->subject, $this->ruleKey(), self::FATAL_FAIL);
                 $this->registerException($e, self::FATAL);
 
-                throw new PipeRuleFatal($e->getMessage(), $this->subject, $e->getCode(), $e);
+                throw (new PipeRuleFatal($e->getMessage(), $this->subject, $e->getCode(), $e))
+                    ->setOrigin($e->originFile(), $e->originLine());
             }
 
             $this->logExecutionResult($this->subject, $this->ruleKey(), self::FAIL);
@@ -342,7 +345,7 @@ abstract class PipeRule
      */
     protected function fatal($message)
     {
-        throw new PipeRuleFatal($message, $this->subject);
+        throw (new PipeRuleFatal($message, $this->subject))->setOrigin(...$this->callSite());
     }
 
     /**
@@ -351,7 +354,22 @@ abstract class PipeRule
      */
     protected function error($message)
     {
-        throw new PipeRuleError($message, $this->subject);
+        throw (new PipeRuleError($message, $this->subject))->setOrigin(...$this->callSite());
+    }
+
+    /**
+     * [file, line] of the first call outside this class's own file: the line
+     * in the user's rule that called fatal() or error().
+     */
+    protected function callSite(): array
+    {
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $frame) {
+            if (isset($frame['file']) && $frame['file'] !== __FILE__) {
+                return [$frame['file'], $frame['line'] ?? 0];
+            }
+        }
+
+        return [__FILE__, __LINE__];
     }
 
     /**
