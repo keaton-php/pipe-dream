@@ -15,6 +15,7 @@ use Keaton\PipeDream\Tests\Fixtures\Rules\ErrorRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\FatalRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\FirstRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\SecondRule;
+use Keaton\PipeDream\Tests\Fixtures\StringKeyWidget;
 use Keaton\PipeDream\Tests\Fixtures\Widget;
 use Keaton\PipeDream\Tests\TestCase;
 use stdClass;
@@ -32,6 +33,12 @@ class DatabasePersistTest extends TestCase
 
         Schema::create('widgets', function (Blueprint $table) {
             $table->id();
+            $table->string('name');
+            $table->timestamps();
+        });
+
+        Schema::create('string_key_widgets', function (Blueprint $table) {
+            $table->string('id')->primary();
             $table->string('name');
             $table->timestamps();
         });
@@ -118,8 +125,34 @@ class DatabasePersistTest extends TestCase
         $row = PipeDreamLog::first();
         $this->assertSame('Widget check', $row->flow);
         $this->assertTrue($row->has_fatals);
+        $this->assertSame(Widget::class, $row->subject_type);
+        $this->assertSame((string) $widget->id, $row->subject_id);
         $this->assertTrue($row->subject->is($widget));
         $this->assertSame(1, PipeDreamLog::withProblems()->count());
+    }
+
+    public function test_a_uuid_keyed_subject_is_stored_and_found_again(): void
+    {
+        $this->assertStringKeyedSubjectRoundTrips('9b2f6c4e-1d3a-4f5b-8c7d-0e1f2a3b4c5d');
+    }
+
+    public function test_a_ulid_keyed_subject_is_stored_and_found_again(): void
+    {
+        $this->assertStringKeyedSubjectRoundTrips('01JBX8Z6Q4M7W3R2T9V5K8N1PD');
+    }
+
+    private function assertStringKeyedSubjectRoundTrips(string $key): void
+    {
+        $widget = StringKeyWidget::create(['id' => $key, 'name' => 'Spring sale']);
+
+        PipeHub::create()
+            ->addPipe(FirstRule::class)
+            ->sendIt(PipeEnvelope::wrap($widget)->persistWith(new DatabasePersistStrategy()));
+
+        $row = PipeDreamLog::first();
+        $this->assertSame(StringKeyWidget::class, $row->subject_type);
+        $this->assertSame($key, $row->subject_id);
+        $this->assertTrue($row->subject->is($widget));
     }
 
     public function test_the_log_column_can_use_the_serialize_format(): void

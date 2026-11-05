@@ -15,7 +15,7 @@ use Keaton\PipeDream\Strategies\PipeLoggerJsonStrategy;
  * @property string $run_id
  * @property string|null $flow
  * @property string|null $subject_type
- * @property int|string|null $subject_id
+ * @property string|null $subject_id
  * @property string $log
  * @property bool $has_errors
  * @property bool $has_fatals

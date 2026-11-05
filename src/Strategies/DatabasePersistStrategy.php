@@ -43,7 +43,7 @@ class DatabasePersistStrategy implements PipeLoggerPersistStrategy
 
         if ($model instanceof Model && $model->getKey() !== null) {
             $attributes['subject_type'] = $model->getMorphClass();
-            $attributes['subject_id'] = $model->getKey();
+            $attributes['subject_id'] = (string) $model->getKey();
         }
 
         return $this->model::query()->updateOrCreate(['run_id' => $subject->runId()], $attributes);
