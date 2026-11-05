@@ -7,6 +7,7 @@ use R1kon\PipeDream\PipeRule;
 use R1kon\PipeDream\Tests\Fixtures\Journal;
 use R1kon\PipeDream\Tests\Fixtures\Rules\InjectedRule;
 use R1kon\PipeDream\Tests\Fixtures\Rules\MagicResultRule;
+use R1kon\PipeDream\Tests\Fixtures\Rules\NamedParameterRule;
 use R1kon\PipeDream\Tests\Fixtures\Rules\NoMethodRule;
 use R1kon\PipeDream\Tests\Fixtures\Rules\RunFunctionRule;
 use R1kon\PipeDream\Tests\Fixtures\Rules\SavesResultAsRule;
@@ -58,6 +59,13 @@ class PipeRuleTest extends TestCase
         PipeHub::create()->addPipe(InjectedRule::class)->sendIt(new stdClass());
 
         $this->assertSame(['temperature=21'], Journal::$entries);
+    }
+
+    public function test_a_rule_method_gets_the_subject_whatever_its_parameter_is_called(): void
+    {
+        PipeHub::create()->addPipe(NamedParameterRule::class)->sendIt((object) ['id' => 9]);
+
+        $this->assertSame(['click 9 at 21'], Journal::$entries);
     }
 
     public function test_a_rule_without_a_run_method_is_logged_as_a_failure(): void

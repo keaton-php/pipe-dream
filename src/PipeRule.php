@@ -6,6 +6,7 @@ use BadMethodCallException;
 use Closure;
 use Illuminate\Container\Container;
 use Illuminate\Support\Str;
+use R1kon\PipeDream\Concerns\PassesSubjectToCallbacks;
 use R1kon\PipeDream\Exceptions\PipeRuleError;
 use R1kon\PipeDream\Exceptions\PipeRuleFatal;
 use R1kon\PipeDream\Exceptions\PipeRuleLoadView;
@@ -24,6 +25,8 @@ use R1kon\PipeDream\Exceptions\PipeRuleRedirect;
  */
 abstract class PipeRule
 {
+    use PassesSubjectToCallbacks;
+
     const ERROR = 'error';
     const FATAL = 'fatal';
 
@@ -167,7 +170,7 @@ abstract class PipeRule
             ));
         }
 
-        $result = $this->container()->call([$this, $method], ['subject' => $subject]) ?? $this->defaultResult;
+        $result = $this->container()->call([$this, $method], $this->withSubjectParameter([$this, $method], ['subject' => $subject])) ?? $this->defaultResult;
 
         $this->logExecutionResult($subject, $this->ruleKey(), $this->skippedItself ? self::SKIP : $result);
 
