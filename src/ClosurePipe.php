@@ -1,6 +1,6 @@
 <?php
 
-namespace R1kon\PipeDream;
+namespace Keaton\PipeDream;
 
 use Closure;
 use ReflectionFunction;

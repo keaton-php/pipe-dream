@@ -1,17 +1,17 @@
 <?php
 
-namespace R1kon\PipeDream\Tests\Unit;
+namespace Keaton\PipeDream\Tests\Unit;
 
-use R1kon\PipeDream\PipeHub;
-use R1kon\PipeDream\PipeRule;
-use R1kon\PipeDream\Tests\Fixtures\Journal;
-use R1kon\PipeDream\Tests\Fixtures\Rules\InjectedRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\MagicResultRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\NamedParameterRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\NoMethodRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\RunFunctionRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\SavesResultAsRule;
-use R1kon\PipeDream\Tests\TestCase;
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeRule;
+use Keaton\PipeDream\Tests\Fixtures\Journal;
+use Keaton\PipeDream\Tests\Fixtures\Rules\InjectedRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\MagicResultRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\NamedParameterRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\NoMethodRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\RunFunctionRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\SavesResultAsRule;
+use Keaton\PipeDream\Tests\TestCase;
 use stdClass;
 
 class PipeRuleTest extends TestCase

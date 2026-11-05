@@ -1,13 +1,13 @@
 <?php
 
-namespace R1kon\PipeDream;
+namespace Keaton\PipeDream;
 
 use BadMethodCallException;
 use Illuminate\Container\Container;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
-use R1kon\PipeDream\Contracts\PipeLoggerPersistStrategy;
-use R1kon\PipeDream\Exceptions\PipeRuleExceptionHandler;
+use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
+use Keaton\PipeDream\Exceptions\PipeRuleExceptionHandler;
 use Throwable;
 
 /**

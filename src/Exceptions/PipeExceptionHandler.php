@@ -1,8 +1,8 @@
 <?php
 
-namespace R1kon\PipeDream\Exceptions;
+namespace Keaton\PipeDream\Exceptions;
 
-use R1kon\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\PipeEnvelope;
 
 /**
  * Optional per-exception handlers, registered as an

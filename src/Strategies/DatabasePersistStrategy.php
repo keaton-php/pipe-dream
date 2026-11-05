@@ -1,13 +1,13 @@
 <?php
 
-namespace R1kon\PipeDream\Strategies;
+namespace Keaton\PipeDream\Strategies;
 
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
-use R1kon\PipeDream\Contracts\PipeLoggerPersistStrategy;
-use R1kon\PipeDream\Contracts\PipeLoggerStrategy;
-use R1kon\PipeDream\Models\PipeDreamLog;
-use R1kon\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
+use Keaton\PipeDream\Contracts\PipeLoggerStrategy;
+use Keaton\PipeDream\Models\PipeDreamLog;
+use Keaton\PipeDream\PipeEnvelope;
 
 /**
  * Stores each run as one row in pipe_dream_logs, keyed by the envelope's

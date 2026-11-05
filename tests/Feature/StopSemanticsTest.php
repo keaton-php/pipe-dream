@@ -1,21 +1,21 @@
 <?php
 
-namespace R1kon\PipeDream\Tests\Feature;
+namespace Keaton\PipeDream\Tests\Feature;
 
-use R1kon\PipeDream\PipeEnvelope;
-use R1kon\PipeDream\PipeHub;
-use R1kon\PipeDream\PipeManager;
-use R1kon\PipeDream\PipeRule;
-use R1kon\PipeDream\Tests\Fixtures\Journal;
-use R1kon\PipeDream\Tests\Fixtures\Rules\ErrorRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\ErrorsAreFatalRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\ExplodingRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\FatalRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\FirstRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\SecondRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\ThirdRule;
-use R1kon\PipeDream\Tests\Fixtures\Rules\UnhandledExplodingRule;
-use R1kon\PipeDream\Tests\TestCase;
+use Keaton\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeManager;
+use Keaton\PipeDream\PipeRule;
+use Keaton\PipeDream\Tests\Fixtures\Journal;
+use Keaton\PipeDream\Tests\Fixtures\Rules\ErrorRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\ErrorsAreFatalRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\ExplodingRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\FatalRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\FirstRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\SecondRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\ThirdRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\UnhandledExplodingRule;
+use Keaton\PipeDream\Tests\TestCase;
 use stdClass;
 
 class StopSemanticsTest extends TestCase

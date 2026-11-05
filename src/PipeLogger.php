@@ -1,12 +1,12 @@
 <?php
 
-namespace R1kon\PipeDream;
+namespace Keaton\PipeDream;
 
 use Illuminate\Container\Container;
 use InvalidArgumentException;
-use R1kon\PipeDream\Contracts\PipeLoggerPersistStrategy;
-use R1kon\PipeDream\Contracts\PipeLoggerStrategy;
-use R1kon\PipeDream\Strategies\PipeLoggerJsonStrategy;
+use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
+use Keaton\PipeDream\Contracts\PipeLoggerStrategy;
+use Keaton\PipeDream\Strategies\PipeLoggerJsonStrategy;
 
 /**
  * The audit trail of one run: an ordered list of records, each with a time,

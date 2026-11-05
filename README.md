@@ -5,12 +5,12 @@
 It is built on the same pipeline pattern as Laravel's own `Pipeline`, and it grew out of a high-volume production click-intake system where every incoming click passes through about ten stages and dozens of rules, with a full audit trail per click.
 
 ```php
-use R1kon\PipeDream\Exceptions\PipeRuleLoadView;
-use R1kon\PipeDream\Exceptions\PipeRuleRedirect;
-use R1kon\PipeDream\PipeEnvelope;
-use R1kon\PipeDream\PipeHub;
-use R1kon\PipeDream\PipeManager;
-use R1kon\PipeDream\Strategies\DatabasePersistStrategy;
+use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
+use Keaton\PipeDream\Exceptions\PipeRuleRedirect;
+use Keaton\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeManager;
+use Keaton\PipeDream\Strategies\DatabasePersistStrategy;
 
 class HandleAdClick
 {
@@ -135,7 +135,7 @@ A demo app pushes 500 synthetic ad clicks through a five-stage, 14-rule flow. Ev
 ## A rule is one small class
 
 ```php
-use R1kon\PipeDream\PipeRule;
+use Keaton\PipeDream\PipeRule;
 
 class EnforceCampaignCountries extends PipeRule
 {
@@ -252,8 +252,8 @@ php artisan migrate
 It creates `pipe_dream_logs`: `run_id` (a unique uuid), `flow` (the manager's name), a nullable `subject` morph (filled in when the subject is a saved Eloquent model), `log`, `has_errors`, `has_fatals` and timestamps.
 
 ```php
-use R1kon\PipeDream\Contracts\PipeLoggerPersistStrategy;
-use R1kon\PipeDream\Strategies\DatabasePersistStrategy;
+use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
+use Keaton\PipeDream\Strategies\DatabasePersistStrategy;
 
 // for one flow
 $click->persistWith(new DatabasePersistStrategy());
@@ -266,7 +266,7 @@ $this->app->bind(PipeLoggerPersistStrategy::class, DatabasePersistStrategy::clas
 
 ```json
 [{"time":1762372800.4121,"key":"PipeManager:sendIt","type":"info","data":"Sending subject through all hubs","context":{"name":"Ad click intake","description":null}},
- {"time":1762372800.4127,"key":"App\\Intake\\Rules\\EnforceCampaignCountries","type":"fatal","data":"Visitor is in CA; campaign targets US [/app/Intake/Rules/EnforceCampaignCountries.php | line 24]","context":{"exception":"R1kon\\PipeDream\\Exceptions\\PipeRuleFatal"}}]
+ {"time":1762372800.4127,"key":"App\\Intake\\Rules\\EnforceCampaignCountries","type":"fatal","data":"Visitor is in CA; campaign targets US [/app/Intake/Rules/EnforceCampaignCountries.php | line 24]","context":{"exception":"Keaton\\PipeDream\\Exceptions\\PipeRuleFatal"}}]
 ```
 
 Pass `new DatabasePersistStrategy(new PipeLoggerSerializeStrategy())` to store PHP `serialize()` output instead (rebuilt with `allowed_classes => false`, so a stored log can never instantiate objects), or your own `PipeLoggerStrategy`.
@@ -274,7 +274,7 @@ Pass `new DatabasePersistStrategy(new PipeLoggerSerializeStrategy())` to store P
 Rebuild any stored run into a logger for a timeline view:
 
 ```php
-use R1kon\PipeDream\Models\PipeDreamLog;
+use Keaton\PipeDream\Models\PipeDreamLog;
 
 $run = PipeDreamLog::forRun($runId)->firstOrFail();
 
@@ -290,8 +290,8 @@ PipeDreamLog::withProblems()->latest()->paginate();   // runs with errors or fat
 Implement one method:
 
 ```php
-use R1kon\PipeDream\Contracts\PipeLoggerPersistStrategy;
-use R1kon\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
+use Keaton\PipeDream\PipeEnvelope;
 
 class JsonFileLogStore implements PipeLoggerPersistStrategy
 {
@@ -355,7 +355,7 @@ A rule that stops the hub never hands off, so its `afterEach` does not fire; rul
 ## Log levels
 
 ```php
-use R1kon\PipeDream\PipeLogger;
+use Keaton\PipeDream\PipeLogger;
 
 $click->logLevel(PipeLogger::LEVEL_EVERYTHING);   // default
 $click->logLevel(PipeLogger::LEVEL_NO_TIMERS);    // drop rule start/end timers
@@ -371,7 +371,7 @@ Tools can read a flow back without reflection, which is how the demo renders its
 ## Install
 
 ```bash
-composer require r1kon/pipe-dream
+composer require keaton-php/pipe-dream
 ```
 
 The service provider is auto-discovered. Publish the migration only if you use the database strategy (see above).

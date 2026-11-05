@@ -1,8 +1,8 @@
 <?php
 
-namespace R1kon\PipeDream\Contracts;
+namespace Keaton\PipeDream\Contracts;
 
-use R1kon\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\PipeEnvelope;
 
 /**
  * Stores an envelope's log somewhere (a database row, a file, a queue).

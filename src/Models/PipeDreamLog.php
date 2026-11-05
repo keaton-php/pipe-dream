@@ -1,12 +1,12 @@
 <?php
 
-namespace R1kon\PipeDream\Models;
+namespace Keaton\PipeDream\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use R1kon\PipeDream\Contracts\PipeLoggerStrategy;
-use R1kon\PipeDream\PipeLogger;
-use R1kon\PipeDream\Strategies\PipeLoggerJsonStrategy;
+use Keaton\PipeDream\Contracts\PipeLoggerStrategy;
+use Keaton\PipeDream\PipeLogger;
+use Keaton\PipeDream\Strategies\PipeLoggerJsonStrategy;
 
 /**
  * One persisted run of a flow (see DatabasePersistStrategy).
