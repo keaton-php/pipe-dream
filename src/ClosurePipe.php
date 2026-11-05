@@ -3,7 +3,6 @@
 namespace R1kon\PipeDream;
 
 use Closure;
-use R1kon\PipeDream\Concerns\PassesSubjectToCallbacks;
 use ReflectionFunction;
 
 /**
@@ -15,8 +14,6 @@ use ReflectionFunction;
  */
 class ClosurePipe extends PipeRule
 {
-    use PassesSubjectToCallbacks;
-
     public static $name = 'Closure';
     public static $description = 'An inline closure pipe';
 
