@@ -45,6 +45,11 @@ All notable changes to this package are documented here. The format follows [Kee
 - `PipeHub::getName()` / `getDescription()` are nullable instead of throwing a `TypeError` on an unnamed hub.
 - `PipeRule::skip($message)` dropped its message and could record two results.
 
+- A standalone hub treated `false`, `0`, `''` and `[]` as a missing subject; only `null` is missing now, as for `PipeManager`.
+- `DatabasePersistStrategy` read and then inserted or updated (`updateOrCreate()`), so two workers persisting one run could collide on the unique `run_id`. It now writes with a single native upsert keyed on `run_id`; `created_at` is set on insert only.
+- `PipeRuleRedirect::toRoute()` built its URL through the global container. The route is now resolved by the rule, hub or manager it passes through, with the run's container.
+- `$this->fatal()` / `$this->error()` records pointed at `PipeRule.php`. They now point at the rule's own call site, in the message and in the record's `context` (`file`, `line`).
+
 ### Changed
 
 - **Package name.** The package is `keaton-php/pipe-dream` and its namespace is `Keaton\PipeDream`; update your `composer.json` and `use` statements from the old pre-release name.
@@ -57,6 +62,7 @@ All notable changes to this package are documented here. The format follows [Kee
 - Per-pipe events are constructed with the envelope and the rule's key (previously the raw subject); hub events with the envelope.
 - `then()` callbacks are no longer rebound to the hub: `$this` inside them is what it was where you wrote them.
 - `PipeManager::sendIt()` without a subject throws `PipeHubException`, like `PipeHub::sendIt()`.
+- A `PipeRuleRedirect` from `toRoute()` carries `$route` and `$parameters`, and its `redirectTo` is filled in when it passes through a rule, hub or manager (or by calling `resolveRoute($container)` yourself).
 - Requires PHP 8.1 or later (the versions the CI matrix covers).
 - Dependencies now declare the components the code uses: `illuminate/container`, `illuminate/contracts`, `illuminate/database`, `illuminate/support` and `ramsey/uuid`.
 
