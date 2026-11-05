@@ -10,8 +10,8 @@ use Keaton\PipeDream\Exceptions\PipeHubException;
 use Keaton\PipeDream\Exceptions\PipeRuleFatal;
 use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
 use Keaton\PipeDream\Exceptions\PipeRuleRedirect;
-use Throwable;
 use Keaton\PipeDream\PipeDreamPipeline as Pipeline;
+use Throwable;
 
 /**
  * A named stage of a flow: an ordered list of rules (or closures) the
@@ -378,15 +378,10 @@ class PipeHub
     {
         $rule = $pipe instanceof Closure ? new ClosurePipe($pipe) : $this->app->make($pipe);
 
-        if ($this->stopOnError) {
-            $rule->setStopOnError(true);
-        }
-
-        if ($skip) {
-            $rule->shouldSkip(true, 'Skipped: the hub\'s skipIf() returned true');
-        }
-
-        return $rule;
+        // Written in full on every run: a rule the container shares between
+        // hubs or runs never keeps another hub's skip or stop policy.
+        return $rule
+            ->applyPolicy($skip, 'Skipped: the hub\'s skipIf() returned true', $this->stopOnError);
     }
 
     protected function pipeWillSkip($subject, $pipe): bool
