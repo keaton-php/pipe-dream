@@ -376,7 +376,7 @@ composer require keaton-php/pipe-dream
 
 The service provider is auto-discovered. Publish the migration only if you use the database strategy (see above).
 
-Supports Laravel 9, 10, 11, 12 and 13 (the test suite runs against each major) on whichever PHP version your Laravel release requires, from 8.0 up.
+Tested on Laravel 9–13 (CI matrix) with PHP 8.1–8.4, each Laravel major on the PHP versions it supports: Laravel 9 on 8.1–8.2, 10 on 8.1–8.3, 11 and 12 on 8.2–8.4, 13 on 8.3–8.4.
 
 ## Testing
 

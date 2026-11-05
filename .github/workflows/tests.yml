@@ -1,0 +1,62 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.2', '8.3', '8.4']
+        laravel: ['9.*', '10.*', '11.*', '12.*', '13.*']
+        include:
+          - laravel: '9.*'
+            testbench: '7.*'
+          - laravel: '10.*'
+            testbench: '8.*'
+          - laravel: '11.*'
+            testbench: '9.*'
+          - laravel: '12.*'
+            testbench: '10.*'
+          - laravel: '13.*'
+            testbench: '11.*'
+        # Each Laravel major only on the PHP versions it supports:
+        # 9 on 8.1-8.2, 10 on 8.1-8.3, 11 and 12 on 8.2-8.4, 13 on 8.3-8.4.
+        exclude:
+          - laravel: '9.*'
+            php: '8.3'
+          - laravel: '9.*'
+            php: '8.4'
+          - laravel: '10.*'
+            php: '8.4'
+          - laravel: '11.*'
+            php: '8.1'
+          - laravel: '12.*'
+            php: '8.1'
+          - laravel: '13.*'
+            php: '8.1'
+          - laravel: '13.*'
+            php: '8.2'
+
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, pdo, sqlite, pdo_sqlite
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --dev --no-interaction --no-update
+          composer update --prefer-dist --prefer-stable --no-interaction --no-progress --with-all-dependencies
+
+      - name: Run the test suite
+        run: vendor/bin/phpunit
