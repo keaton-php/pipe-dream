@@ -3,6 +3,7 @@
 namespace Keaton\PipeDream\Exceptions;
 
 use Exception;
+use Keaton\PipeDream\Concerns\RecordsOrigin;
 use Throwable;
 
 /**
@@ -11,6 +12,8 @@ use Throwable;
  */
 class PipeRuleError extends Exception
 {
+    use RecordsOrigin;
+
     protected $subject;
 
     public function __construct($message = '', $subject = null, $code = 0, ?Throwable $previous = null)
