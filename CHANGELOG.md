@@ -50,6 +50,10 @@ All notable changes to this package are documented here. The format follows [Kee
 - `PipeRuleRedirect::toRoute()` built its URL through the global container. The route is now resolved by the rule, hub or manager it passes through, with the run's container.
 - `$this->fatal()` / `$this->error()` records pointed at `PipeRule.php`. They now point at the rule's own call site, in the message and in the record's `context` (`file`, `line`).
 
+- A `toRoute()` redirect thrown by `onFailure()` left the hub without a URL. The hub resolves it with its own container, and a standalone hub and the manager resolve any redirect on the way out.
+- A container-shared (singleton) rule was executed directly: it kept a reference to its last envelope, could still write to a finished one, and nested or interleaved runs of it shared one subject, policy and container. Hubs now run a fresh copy of each rule per run, and a rule lets go of its envelope when it finishes.
+- `PipeEnvelope::get()` and `PipeLogger::recordsByKey()` treated `0`, `'0'` and `''` as "no key"; only `null` does now.
+
 ### Changed
 
 - **Package name.** The package is `keaton-php/pipe-dream` and its namespace is `Keaton\PipeDream`; update your `composer.json` and `use` statements from the old pre-release name.
@@ -63,6 +67,7 @@ All notable changes to this package are documented here. The format follows [Kee
 - `then()` callbacks are no longer rebound to the hub: `$this` inside them is what it was where you wrote them.
 - `PipeManager::sendIt()` without a subject throws `PipeHubException`, like `PipeHub::sendIt()`.
 - A `PipeRuleRedirect` from `toRoute()` carries `$route` and `$parameters`, and its `redirectTo` is filled in when it passes through a rule, hub or manager (or by calling `resolveRoute($container)` yourself).
+- Each run executes a clone of the rule the container returns. State a rule sets on itself during a run stays on that run's copy; keep cross-run state in an injected service instead.
 - Requires PHP 8.1 or later (the versions the CI matrix covers).
 - Dependencies now declare the components the code uses: `illuminate/container`, `illuminate/contracts`, `illuminate/database`, `illuminate/support` and `ramsey/uuid`.
 
