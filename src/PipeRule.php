@@ -4,7 +4,7 @@ namespace Keaton\PipeDream;
 
 use BadMethodCallException;
 use Closure;
-use Illuminate\Container\Container;
+use Illuminate\Container\Container as IlluminateContainer;
 use Illuminate\Support\Str;
 use Keaton\PipeDream\Concerns\PassesSubjectToCallbacks;
 use Keaton\PipeDream\Exceptions\PipeRuleError;
@@ -49,7 +49,7 @@ abstract class PipeRule
     /** Treat a PipeRuleError raised by this rule as a PipeRuleFatal. */
     protected $errorsAreFatal = false;
 
-    /** End the hub when this rule raises a PipeRuleError (set by PipeHub::stopOnError()). */
+    /** End the hub when this rule raises a PipeRuleError (a hub's stopOnError() also applies, per run). */
     protected $stopOnError = false;
 
     protected $shouldSkip = false;
@@ -59,6 +59,20 @@ abstract class PipeRule
     protected bool $skippedItself = false;
 
     protected bool $wasSkipped = false;
+
+    /*
+     * Per-run policy, written by the hub on every run (see applyPolicy()).
+     * Kept apart from the rule's own settings so a container-shared rule
+     * instance never carries one hub's policy into another run.
+     */
+    protected bool $policySkip = false;
+
+    protected ?string $policySkipReason = null;
+
+    protected bool $policyStopOnError = false;
+
+    /** Set by withoutErrorHandling() for the current run only. */
+    protected bool $runRethrowErrors = false;
 
     protected $subject;
 
@@ -87,8 +101,26 @@ abstract class PipeRule
      */
     public function willSkip($subject): bool
     {
-        return $this->shouldSkip || ($subject instanceof PipeEnvelope && $subject->skipsAll());
+        return $this->shouldSkip
+            || $this->policySkip
+            || ($subject instanceof PipeEnvelope && $subject->skipsAll());
     }
+
+    /**
+     * The hub's policy for the coming run. Every field is written on every
+     * call, so nothing from an earlier run survives.
+     *
+     * @internal Called by PipeHub before each run.
+     */
+    public function applyPolicy(bool $skip, ?string $skipReason, bool $stopOnError)
+    {
+        $this->policySkip = $skip;
+        $this->policySkipReason = $skip ? $skipReason : null;
+        $this->policyStopOnError = $stopOnError;
+
+        return $this;
+    }
+
 
     /**
      * Whether the last run skipped this rule without executing it.
@@ -147,7 +179,18 @@ abstract class PipeRule
 
     protected function container()
     {
-        return Container::getInstance();
+        return IlluminateContainer::getInstance();
+    }
+
+    protected function skipMessage(): string
+    {
+        if ($this->shouldSkip) {
+            return $this->skipReason ?? 'Skipped';
+        }
+
+        return $this->policySkip
+            ? ($this->policySkipReason ?? 'Skipped')
+            : 'Skipped: skipAll() was called';
     }
 
     protected function runFromContainer($method, $parameters = [])
@@ -191,11 +234,12 @@ abstract class PipeRule
     public function handle($subject, Closure $next)
     {
         $this->register($subject);
+        $this->runRethrowErrors = false;
         $this->wasSkipped = $this->willSkip($subject);
 
         try {
             if ($this->wasSkipped) {
-                $this->info($this->skipReason ?? ($this->shouldSkip ? 'Skipped' : 'Skipped: skipAll() was called'));
+                $this->info($this->skipMessage());
                 $this->logExecutionResult($subject, $this->ruleKey(), self::SKIP);
             } else {
                 $subject = $this->execute($subject) ?? $subject;
@@ -211,7 +255,7 @@ abstract class PipeRule
             $this->logExecutionResult($this->subject, $this->ruleKey(), self::FAIL);
             $this->registerException($e);
 
-            if ($this->stopOnError) {
+            if ($this->stopOnError || $this->policyStopOnError) {
                 throw $e;
             }
         } catch (PipeRuleFatal $e) {
@@ -226,7 +270,7 @@ abstract class PipeRule
             $this->logExecutionResult($this->subject, $this->ruleKey(), self::FAIL);
             $this->registerException($e);
 
-            if ($this->rethrowErrors) {
+            if ($this->rethrowErrors || $this->runRethrowErrors) {
                 throw $e;
             }
         } finally {
@@ -248,7 +292,7 @@ abstract class PipeRule
      */
     protected function withoutErrorHandling()
     {
-        $this->rethrowErrors = true;
+        $this->runRethrowErrors = true;
     }
 
     protected function registerException($exception, $type = self::ERROR)
