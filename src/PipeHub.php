@@ -280,7 +280,10 @@ class PipeHub
 
     protected function prepareSubject($subject): PipeEnvelope
     {
-        if (! $subject = $subject ?? $this->subject) {
+        // Only null is missing: false, 0, '' and [] are subjects like any other.
+        $subject = $subject ?? $this->subject;
+
+        if ($subject === null) {
             throw PipeHubException::missingSubject();
         }
 
