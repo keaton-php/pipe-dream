@@ -2,38 +2,79 @@
 
 namespace R1kon\PipeDream;
 
+use BadMethodCallException;
+use Illuminate\Container\Container;
 use Illuminate\Support\Str;
-use R1kon\PipeDream\PipeLogger;
+use InvalidArgumentException;
 use R1kon\PipeDream\Contracts\PipeLoggerPersistStrategy;
 use R1kon\PipeDream\Exceptions\PipeRuleExceptionHandler;
+use Throwable;
 
-class PipeEnvelope {
-    
+/**
+ * The subject travels through a flow wrapped in an envelope. The envelope
+ * carries the log, the rule results, shared state (set/get) and a stable
+ * run id; property reads, writes and method calls are passed through to the
+ * wrapped subject.
+ */
+class PipeEnvelope
+{
     protected $subject;
+
     protected $logger;
-    protected $broadcastEvents = [];
+
     protected $savedAttributes = [];
+
     protected $ruleResults;
-    protected $skipPipes = [];
-    protected $auditLogEntry;
-    protected $logRuleResults = true;
+
     protected $app;
+
     protected $exceptionHandler;
-    protected $skipAllRemainingPipes = false;
+
+    protected bool $skipAllRemainingPipes = false;
+
+    protected string $runId;
+
+    protected ?string $flowName = null;
 
     public function __construct($subject = null, $app = null)
-    { 
+    {
         $this->subject = $subject;
-        $this->app = $app ?? app();
+        $this->app = $app ?? Container::getInstance();
+        $this->runId = (string) Str::uuid();
 
-        $this->logger = new PipeLogger($this->app); //Here we go.
-        $this->ruleResults = new PipeRuleResults(); //Here we go again.
-        $this->exceptionHandler = new PipeRuleExceptionHandler($this->app); //and again!
+        $this->logger = new PipeLogger($this->app);
+        $this->ruleResults = new PipeRuleResults();
+        $this->exceptionHandler = new PipeRuleExceptionHandler($this->app);
     }
 
-    public function __destruct()
+    public static function wrap($subject)
     {
-        
+        return $subject instanceof PipeEnvelope ? $subject : new static($subject);
+    }
+
+    /**
+     * A uuid that identifies this run, stable for the life of the envelope.
+     * DatabasePersistStrategy upserts on it.
+     */
+    public function runId(): string
+    {
+        return $this->runId;
+    }
+
+    /**
+     * The name of the flow this envelope is travelling through (the
+     * manager's name, or the hub's name when a hub runs on its own).
+     */
+    public function flowName(): ?string
+    {
+        return $this->flowName;
+    }
+
+    public function setFlowName(?string $name)
+    {
+        $this->flowName = $name;
+
+        return $this;
     }
 
     public function persist()
@@ -46,76 +87,100 @@ class PipeEnvelope {
         return $this->logger->persist($this, $strategy);
     }
 
+    /**
+     * @param  PipeLoggerPersistStrategy|class-string<PipeLoggerPersistStrategy>  $strategy
+     */
     public function persistWith(PipeLoggerPersistStrategy|string $strategy)
     {
-        if(is_string($strategy))
-        {
-            if(class_exists($strategy) && class_implements($strategy, PipeLoggerPersistStrategy::class))
-                $strategy = new $strategy();
-            else
-                throw new \Exception("Invalid persist strategy");
-        } 
+        if (is_string($strategy)) {
+            if (! class_exists($strategy) || ! is_subclass_of($strategy, PipeLoggerPersistStrategy::class)) {
+                throw new InvalidArgumentException(
+                    "Persist strategy [{$strategy}] must be a class implementing ".PipeLoggerPersistStrategy::class.'.'
+                );
+            }
+
+            $strategy = $this->app ? $this->app->make($strategy) : new $strategy();
+        }
 
         $this->logger->persistLogsWith($strategy);
-        
+
         return $this;
     }
 
+    /**
+     * One of PipeLogger::LEVEL_EVERYTHING, LEVEL_NO_TIMERS, LEVEL_PROBLEMS.
+     */
     public function logLevel($level)
     {
         $this->logger->setLevel($level);
+
         return $this;
     }
-    
+
     public function subject()
     {
         return $this->subject;
     }
 
+    /**
+     * A rule (or closure pipe) is starting: open its timer.
+     */
     public function register($rule)
     {
-        //Initialize the logs for this rule
-        $key = get_class($rule);
+        $key = $this->keyFor($rule);
         $this->logger->timerStart($key, "Executing rule {$key}");
     }
 
+    /**
+     * A rule (or closure pipe) has finished: close its timer.
+     */
     public function unregister($rule)
     {
-        //End the logs for this rule
-        $key = get_class($rule);
+        $key = $this->keyFor($rule);
         $this->logger->timerEnd($key, "Finished executing rule {$key}");
+    }
+
+    protected function keyFor($rule): string
+    {
+        return $rule instanceof PipeRule ? $rule->ruleKey() : get_class($rule);
     }
 
     public function addExceptionHandler($exception, $handler)
     {
         $this->exceptionHandler->addHandler($exception, $handler);
+
         return $this;
     }
 
-    public function registerException(\Exception $exception, $type, $ruleClass)
+    public function registerException(Throwable $exception, $type, $ruleClass)
     {
-       $exceptionMessage = sprintf("%s [%s | line %s]", $exception->getMessage(), $exception->getFile(), $exception->getLine());
-       $this->logger->{$type}($ruleClass, $exceptionMessage);
-       return $this->exceptionHandler->handle($this, $exception);
+        $exceptionMessage = sprintf('%s [%s | line %s]', $exception->getMessage(), $exception->getFile(), $exception->getLine());
+        $this->logger->{$type}($ruleClass, $exceptionMessage, ['exception' => get_class($exception)]);
+
+        return $this->exceptionHandler->handle($this, $exception);
     }
 
     public function saveRuleResult(PipeRuleResult $pipeExecutionResult)
     {
-        if($this->logRuleResults)
-            $this->logger->returnValue($pipeExecutionResult->rule(), $pipeExecutionResult->result());
+        $this->logger->returnValue($pipeExecutionResult->rule(), $pipeExecutionResult->result());
 
         $this->ruleResults->add($pipeExecutionResult);
     }
 
-    public function setSkips($skipPipes = [])
-    {
-        $this->skipPipes = $skipPipes;
-    }
-
+    /**
+     * Skip everything that has not run yet: every remaining pipe in this hub
+     * and in every later hub is logged as skipped and not executed.
+     */
     public function skipAll()
     {
         $this->skipAllRemainingPipes = true;
+
         return $this;
+    }
+
+    public function skipsAll(): bool
+    {
+        return $this->skipAllRemainingPipes;
     }
 
     public function results()
@@ -126,71 +191,43 @@ class PipeEnvelope {
     public function set($key, $value)
     {
         $this->savedAttributes[$key] = $value;
+
+        return $this;
     }
 
-    private function ignoreSavedAttributeCase($key)
+    /**
+     * Read shared state. Keys are matched exactly first, then
+     * case-insensitively. With no key, every saved value is returned.
+     */
+    public function get($key = null)
     {
-        return collect($this->savedAttributes)->filter(function($value, $savedKey) use ($key) {
-            return Str::upper($savedKey) === Str::upper($key);
-        })->first();
+        if (! $key) {
+            return $this->savedAttributes;
+        }
+
+        if (array_key_exists($key, $this->savedAttributes)) {
+            return $this->savedAttributes[$key];
+        }
+
+        return $this->ignoreSavedAttributeCase($key);
     }
-    
+
     public function result($key = null)
     {
         return $this->get($key);
     }
 
-    public function broadcastEvents($type = null)
+    private function ignoreSavedAttributeCase($key)
     {
-        return $type ? ($this->broadcastEvents[$type] ?? null)
-                     : $this->broadcastEvents;
-    }
-
-    public function setEvents($events)
-    {
-        $this->broadcastEvents = $events;
-        return $this;
-    }
-    
-    public function sendBroadcastEventByType($type)
-    {
-        if($this->broadcastEvents[$type] ?? null)
-            $this->broadcastEvent($this->broadcastEvents[$type] ?? null);
-        
-            return $this;
-    }
-
-    private function broadcastEvent($event)
-    {
-        $this->resolve('events')->dispatch(new $event($this->subject));
-        return $this;
-    }
-
-    private function resolve($key)
-    {
-        return $this->app->make($key);
-    }
-
-    public function get($key = null)
-    {
-        if(!$key)
-            return $this->savedAttributes;
-
-        if(! isset($this->savedAttributes[$key]))
-        {
-            return $this->ignoreSavedAttributeCase($key);
+        foreach ($this->savedAttributes as $savedKey => $value) {
+            if (Str::upper($savedKey) === Str::upper($key)) {
+                return $value;
+            }
         }
-        return $this->savedAttributes[$key] ?? null;
+
+        return null;
     }
 
-    public static function wrap($subject)
-    {
-        //If the subject is already an envelope, just return. Otherwise, wrap.
-        return $subject instanceof static 
-                    ? $subject 
-                    : new static($subject);
-    }
-    
     public function logger()
     {
         return $this->logger;
@@ -203,51 +240,43 @@ class PipeEnvelope {
 
     public function hasErrors()
     {
-        return !! $this->logger->errors();
+        return $this->logger->errors()->isNotEmpty();
     }
 
     public function hasFatalErrors()
     {
-        return !! $this->logger->fatals();
-    }
-
-    public function load($key)
-    {
-        return $this->evaluate($this->lazyLoaded[$key] ?? null);
-    }
-    
-    public function evaluate($value)
-    {
-        return $value instanceof \Closure ? $value() : $value;
+        return $this->logger->fatals()->isNotEmpty();
     }
 
     public function __set($name, $value)
     {
-        if ($this->subject) {
-            $this->subject->$name = $value;
-        } else {
-            throw new \Exception("Subject does not exist [$name]");
+        if (! is_object($this->subject)) {
+            throw new BadMethodCallException("Cannot set [{$name}]: the envelope has no subject object.");
         }
+
+        $this->subject->$name = $value;
     }
 
     public function __get($name)
     {
-        if ($this->subject) {
-            return isset($this->subject->$name)
-                        ? $this->subject->$name
-                        : null;
-                       // : throw new \Exception("Property $name does not exist on subject");
+        if (is_object($this->subject) && isset($this->subject->$name)) {
+            return $this->subject->$name;
         }
+
         return null;
-        //throw new \Exception("Subject does not exist");
+    }
+
+    public function __isset($name)
+    {
+        return is_object($this->subject) && isset($this->subject->$name);
     }
 
     public function __call($name, $arguments)
     {
-        if ($this->subject && method_exists($this->subject, $name)) {
+        if (is_object($this->subject) && method_exists($this->subject, $name)) {
             return $this->subject->$name(...$arguments);
-        } else {
-            throw new \Exception("Method $name does not exist on subject");
         }
+
+        throw new BadMethodCallException("Method [{$name}] does not exist on the envelope or its subject.");
     }
 }
