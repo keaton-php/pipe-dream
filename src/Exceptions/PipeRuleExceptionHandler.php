@@ -34,7 +34,10 @@ class PipeRuleExceptionHandler
 
     public function bootHandlers()
     {
-        $this->handlers = $this->app->make('pipehub:exceptions');
+        // Exception handlers are optional: an app that never registers any still works.
+        $this->handlers = $this->app->bound('pipehub:exceptions')
+            ? $this->app->make('pipehub:exceptions')
+            : [];
     }
 
     public function handle(PipeEnvelope $subject, Exception $exception)
