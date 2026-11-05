@@ -1,0 +1,39 @@
+{
+    "name": "r1kon/pipe-dream",
+    "description": "Pipe-driven development for Laravel: business flows that read like a table of contents, with every step logged, timed and explainable.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "pipeline", "workflow", "rules", "audit-log"],
+    "authors": [
+        {
+            "name": "Kevin Eaton",
+            "email": "kevin@kevineaton.dev"
+        }
+    ],
+    "require": {
+        "php": "^8.0",
+        "illuminate/pipeline": "^9.19|^10.0|^11.0|^12.0|^13.0",
+        "illuminate/support": "^9.19|^10.0|^11.0|^12.0|^13.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6|^10.0|^11.0",
+        "orchestra/testbench": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "R1kon\\PipeDream\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": ["R1kon\\PipeDream\\PipeDreamServiceProvider"]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
