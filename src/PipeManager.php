@@ -144,6 +144,11 @@ class PipeManager
                 $subject->logger()->info('PipeManager:sendIt', 'Flow handed off: '.$e->getMessage());
 
                 throw $e;
+            } catch (PipeHubException $e) {
+                // A configuration error is the caller's to fix, not a flow outcome.
+                $subject->logger()->error('PipeManager:sendIt', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeManagerContext());
+
+                throw $e;
             } catch (PipeRuleFatal $e) {
                 $subject->logger()->warning('PipeManager:sendIt', 'Flow stopped by a fatal: '.$e->getMessage(), $this->getPipeManagerContext());
             } catch (Throwable $e) {

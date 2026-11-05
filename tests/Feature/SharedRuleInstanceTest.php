@@ -3,11 +3,16 @@
 namespace Keaton\PipeDream\Tests\Feature;
 
 use Illuminate\Container\Container;
+use Keaton\PipeDream\Exceptions\PipeHubException;
 use Keaton\PipeDream\PipeEnvelope;
 use Keaton\PipeDream\PipeHub;
 use Keaton\PipeDream\PipeManager;
 use Keaton\PipeDream\PipeRule;
+use Keaton\PipeDream\Tests\Fixtures\CountingPersist;
 use Keaton\PipeDream\Tests\Fixtures\Journal;
+use Keaton\PipeDream\Tests\Fixtures\Rules\CountingCloneRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\PrivateCloneRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\RefusingCloneRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\ErrorRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\FirstRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\MagicResultRule;
@@ -18,9 +23,10 @@ use Keaton\PipeDream\Tests\TestCase;
 use stdClass;
 
 /**
- * A rule bound as a singleton is the same object every time the container
- * resolves it. Hubs run a fresh copy per run, so the shared instance is
- * never executed or changed, and one hub's skip or stop policy never sticks.
+ * A rule bound as shared (singleton or instance) is the same object every
+ * time the container resolves it. Hubs run a copy of a shared rule per run,
+ * so the shared instance is never executed or changed and one hub's skip or
+ * stop policy never sticks. A transient resolution runs as it is.
  */
 class SharedRuleInstanceTest extends TestCase
 {
@@ -138,6 +144,94 @@ class SharedRuleInstanceTest extends TestCase
         ], Journal::$entries);
         $this->assertSame(PipeRule::SUCCESS, $envelope->get(ReentrantRule::class));
         $this->assertSame('after the nested run', $envelope->logger()->infos()->firstWhere('key', ReentrantRule::class)['data']);
+    }
+
+    public function test_a_transient_rule_runs_as_the_object_the_container_returned(): void
+    {
+        $rule = new FirstRule();
+        $this->app->bind(FirstRule::class, fn () => $rule);
+
+        $hub = PipeHub::create()->addPipe(FirstRule::class);
+        $hub->sendIt(new stdClass());
+
+        $this->assertSame($rule, $hub->getInstantiatedPipes()[0]);
+        $this->assertSame(['FirstRule'], Journal::$entries);
+    }
+
+    public function test_a_singleton_rule_runs_as_a_copy(): void
+    {
+        $this->app->singleton(FirstRule::class);
+
+        $hub = PipeHub::create()->addPipe(FirstRule::class);
+        $hub->sendIt(new stdClass());
+
+        $this->assertInstanceOf(FirstRule::class, $hub->getInstantiatedPipes()[0]);
+        $this->assertNotSame($this->app->make(FirstRule::class), $hub->getInstantiatedPipes()[0]);
+    }
+
+    public function test_an_instance_bound_rule_runs_as_a_copy(): void
+    {
+        $this->app->instance(FirstRule::class, $shared = new FirstRule());
+
+        $hub = PipeHub::create()->addPipe(FirstRule::class);
+        $hub->sendIt(new stdClass());
+
+        $this->assertNotSame($shared, $hub->getInstantiatedPipes()[0]);
+    }
+
+    public function test_a_shared_rule_that_cannot_be_copied_is_a_clear_configuration_error(): void
+    {
+        $this->app->singleton(PrivateCloneRule::class);
+        $persist = new CountingPersist();
+
+        try {
+            PipeManager::create([
+                PipeHub::create()->addPipes([FirstRule::class, PrivateCloneRule::class])->onFailure(fn () => Journal::record('onFailure')),
+                PipeHub::create()->addPipe(SecondRule::class),
+            ])->subject(PipeEnvelope::wrap(new stdClass())->persistWith($persist))->sendIt();
+
+            $this->fail('A non-cloneable shared rule must not be swallowed.');
+        } catch (PipeHubException $e) {
+            $this->assertStringContainsString(PrivateCloneRule::class, $e->getMessage());
+            $this->assertStringContainsString('Bind it non-shared', $e->getMessage());
+        }
+
+        // Nothing ran as if the rule had merely failed, and the log was still written.
+        $this->assertSame([], Journal::$entries);
+        $this->assertSame(1, $persist->calls);
+    }
+
+    public function test_a_shared_rule_whose_clone_refuses_is_a_clear_configuration_error(): void
+    {
+        $this->app->singleton(RefusingCloneRule::class);
+
+        try {
+            PipeHub::create()->addPipe(RefusingCloneRule::class)->sendIt(new stdClass());
+            $this->fail('A refused copy must not be swallowed.');
+        } catch (PipeHubException $e) {
+            $this->assertStringContainsString(RefusingCloneRule::class, $e->getMessage());
+            $this->assertInstanceOf(\LogicException::class, $e->getPrevious());
+        }
+    }
+
+    public function test_a_transient_rule_that_cannot_be_copied_runs_normally(): void
+    {
+        PipeHub::create()->addPipe(PrivateCloneRule::class)->sendIt(new stdClass());
+
+        $this->assertSame(['PrivateCloneRule'], Journal::$entries);
+    }
+
+    public function test_a_public_clone_method_is_respected(): void
+    {
+        $this->app->singleton(CountingCloneRule::class);
+        CountingCloneRule::$copies = 0;
+
+        $hub = PipeHub::create()->addPipe(CountingCloneRule::class);
+        $hub->sendIt(new stdClass());
+        $hub->sendIt(new stdClass());
+
+        $this->assertSame(['copy 1', 'copy 2'], Journal::$entries);
+        $this->assertNull($this->app->make(CountingCloneRule::class)->copyNumber);
     }
 
     public function test_a_rule_that_sets_errors_are_fatal_keeps_it(): void

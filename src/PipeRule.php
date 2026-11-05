@@ -8,6 +8,7 @@ use Illuminate\Container\Container as IlluminateContainer;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Str;
 use Keaton\PipeDream\Concerns\PassesSubjectToCallbacks;
+use Keaton\PipeDream\Exceptions\PipeHubException;
 use Keaton\PipeDream\Exceptions\PipeRuleError;
 use Keaton\PipeDream\Exceptions\PipeRuleFatal;
 use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
@@ -281,7 +282,8 @@ abstract class PipeRule
             throw $e;
         } catch (PipeRuleRedirect $e) {
             throw $e->resolveRoute($this->container());
-        } catch (PipeRuleLoadView $e) {
+        } catch (PipeRuleLoadView|PipeHubException $e) {
+            // A view hand-off, or a misconfigured flow started inside this rule.
             throw $e;
         } catch (Throwable $e) {
             // Anything else, including PHP errors such as a TypeError.
