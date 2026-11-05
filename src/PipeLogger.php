@@ -7,6 +7,7 @@ use InvalidArgumentException;
 use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
 use Keaton\PipeDream\Contracts\PipeLoggerStrategy;
 use Keaton\PipeDream\Strategies\PipeLoggerJsonStrategy;
+use Keaton\PipeDream\Support\LogValue;
 
 /**
  * The audit trail of one run: an ordered list of records, each with a time,
@@ -124,12 +125,13 @@ class PipeLogger
             return;
         }
 
+        // Records are kept JSON-safe so persisting a log can never fail.
         $this->records[] = [
             'time' => microtime(true),
-            'key' => $key,
+            'key' => (string) $key,
             'type' => $type,
-            'data' => $data,
-            'context' => $context,
+            'data' => LogValue::normalize($data),
+            'context' => LogValue::normalize($context),
         ];
     }
 
