@@ -35,6 +35,18 @@ class PipeEnvelopeTest extends TestCase
         $this->assertSame(['botScore' => 0.4, 'flag' => false], $envelope->get());
     }
 
+    public function test_falsey_keys_are_real_keys(): void
+    {
+        $envelope = (new PipeEnvelope())->set(0, 'zero')->set('', 'empty')->set('other', 'x');
+
+        $this->assertSame('zero', $envelope->get(0));
+        $this->assertSame('zero', $envelope->get('0'));
+        $this->assertSame('empty', $envelope->get(''));
+        $this->assertNull((new PipeEnvelope())->get(0));
+        $this->assertCount(3, $envelope->get());
+        $this->assertCount(3, $envelope->get(null));
+    }
+
     public function test_a_fresh_envelope_has_no_errors(): void
     {
         $envelope = new PipeEnvelope(new stdClass());

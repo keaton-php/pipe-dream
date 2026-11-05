@@ -144,6 +144,19 @@ class PipeLoggerTest extends TestCase
         (new PipeLogger())->setStrategy(stdClass::class);
     }
 
+    public function test_records_by_key_treats_falsey_keys_as_real_keys(): void
+    {
+        $logger = new PipeLogger();
+        $logger->info(0, 'zero');
+        $logger->info('', 'empty');
+        $logger->info('Rule', 'rule');
+
+        $this->assertSame(['zero'], $logger->recordsByKey(0)->pluck('data')->values()->all());
+        $this->assertSame(['zero'], $logger->recordsByKey('0')->pluck('data')->values()->all());
+        $this->assertSame(['empty'], $logger->recordsByKey('')->pluck('data')->values()->all());
+        $this->assertCount(3, $logger->recordsByKey());
+    }
+
     public function test_records_can_be_filtered_by_key_and_type(): void
     {
         $logger = $this->logEveryType(new PipeLogger());
