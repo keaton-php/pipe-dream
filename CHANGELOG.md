@@ -51,7 +51,7 @@ All notable changes to this package are documented here. The format follows [Kee
 - `$this->fatal()` / `$this->error()` records pointed at `PipeRule.php`. They now point at the rule's own call site, in the message and in the record's `context` (`file`, `line`).
 
 - A `toRoute()` redirect thrown by `onFailure()` left the hub without a URL. The hub resolves it with its own container, and a standalone hub and the manager resolve any redirect on the way out.
-- A container-shared (singleton) rule was executed directly: it kept a reference to its last envelope, could still write to a finished one, and nested or interleaved runs of it shared one subject, policy and container. Hubs now run a fresh copy of each rule per run, and a rule lets go of its envelope when it finishes.
+- A container-shared (singleton) rule was executed directly: it kept a reference to its last envelope, could still write to a finished one, and nested or interleaved runs of it shared one subject, policy and container. Hubs now run a copy of each shared rule per run, and a rule lets go of its envelope when it finishes.
 - `PipeEnvelope::get()` and `PipeLogger::recordsByKey()` treated `0`, `'0'` and `''` as "no key"; only `null` does now.
 
 ### Changed
