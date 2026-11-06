@@ -96,4 +96,48 @@ class CallbackParametersTest extends TestCase
         $this->assertTrue($envelope->hasFatalErrors());
         $this->assertSame(\TypeError::class, $envelope->logger()->fatals()->firstWhere('key', 'PipeHub:sendIt')['context']['exception']);
     }
+
+    public function test_parameters_named_subject_and_exception_are_type_checked_too(): void
+    {
+        $this->app->instance(Journal::class, $journal = new Journal());
+        $seen = [];
+
+        PipeHub::create()
+            ->addPipe(ErrorRule::class)
+            ->onError(function ($post, Journal $exception) use (&$seen) {
+                $seen['service named $exception'] = $exception;
+            })
+            ->then(function (string $subject = 'default') use (&$seen) {
+                $seen['string named $subject'] = $subject;
+            })
+            ->sendIt(new stdClass());
+
+        $this->assertSame($journal, $seen['service named $exception']);
+        $this->assertSame('default', $seen['string named $subject']);
+    }
+
+    public function test_intersection_types_must_be_met_in_full(): void
+    {
+        $binder = new class {
+            use \Keaton\PipeDream\Concerns\PassesSubjectToCallbacks;
+
+            public function bind($callback, array $parameters): array
+            {
+                return $this->withSubjectParameter($callback, $parameters);
+            }
+        };
+
+        $both = new \ArrayObject();   // Countable & ArrayAccess
+        $one = new class implements \Countable {
+            public function count(): int
+            {
+                return 0;
+            }
+        };
+
+        $accepts = fn (\Countable&\ArrayAccess $value) => null;
+
+        $this->assertSame(['value' => $both], $binder->bind($accepts, ['subject' => $both]));
+        $this->assertSame(['subject' => $one], $binder->bind($accepts, ['subject' => $one]));
+    }
 }

@@ -215,7 +215,7 @@ class CallbackFailuresTest extends TestCase
         $this->assertTrue($envelope->hasFatalErrors());
     }
 
-    public function test_a_configuration_error_from_any_hook_or_then_is_never_recorded_as_an_error_or_fatal(): void
+    public function test_a_configuration_error_from_any_hook_or_then_leaves_send_it_as_itself(): void
     {
         $misconfigured = fn () => PipeHub::create()->addPipe('NoSuchRule');
         $cases = [
