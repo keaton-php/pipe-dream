@@ -29,7 +29,7 @@ class PublishPost
             return view($e->view, $e->data);
         }
 
-        // A fatal is not thrown: it is recorded on the envelope.
+        // By default a fatal is not thrown: it is recorded on the envelope.
         if ($envelope->hasFatalErrors()) {
             return response()->json(['error' => 'This post cannot be published'], 422);
         }

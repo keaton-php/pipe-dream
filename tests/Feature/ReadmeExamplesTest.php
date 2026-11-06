@@ -275,7 +275,16 @@ class ReadmeExamplesTest extends TestCase
         $this->assertExampleOutput('controller.php');
     }
 
-    public function test_a_fatal_never_leaves_send_it_as_an_exception(): void
+    public function test_with_throw_fatals_a_fatal_that_ends_the_flow_lands_in_the_catch(): void
+    {
+        $vars = $this->assertExampleOutput('throw-fatals.php');
+
+        // The printed lines come from the catch and from the normal return.
+        $this->assertStringStartsWith('caught "The post has no title"', ($vars['publish'])((object) ['title' => ''], true));
+        $this->assertStringStartsWith('returned', ($vars['publish'])((object) ['title' => ''], false));
+    }
+
+    public function test_by_default_a_fatal_never_leaves_send_it_as_an_exception(): void
     {
         $envelope = PipeManager::create([
             PipeHub::create()->addPipe(RejectEmptyTitle::class)->stopOnFatal(),
