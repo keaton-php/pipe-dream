@@ -763,7 +763,7 @@ A demo app pushes 500 synthetic ad clicks through a five-stage, 14-rule flow lik
 | `return $this->skip('why');` | `SKIP` (4), and the reason | the next pipe runs |
 | `$this->error('why');` | `FAIL` (2), and an error record | the next pipe runs |
 | `$this->fatal('why');` | `FATAL_FAIL` (3), and a fatal record | the rest of this hub is skipped |
-| any other exception or PHP error, except the three below | `FAIL` (2), and an error record | the next pipe runs |
+| any other exception or PHP error, except the three below | `FAIL` (2), and an error record | by default the next pipe runs (with `withoutErrorHandling()` or `$rethrowErrors = true` it escapes and ends the hub, see below) |
 
 A closure pipe's result is whatever it returns (nothing, or the subject itself, counts as `SUCCESS`). `error()` and `fatal()` records point at the line in your rule that called them. Three exceptions are not failures and are never recorded as `FAIL`: `PipeRuleRedirect` and `PipeRuleLoadView` hand control back to your controller, and `PipeHubException`, a configuration error, is thrown straight out of the flow.
 
