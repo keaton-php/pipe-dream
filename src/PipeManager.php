@@ -32,6 +32,8 @@ class PipeManager
 
     protected bool $persistLogsOnFinalize = true;
 
+    protected bool $throwFatals = false;
+
     protected $app;
 
     public function __construct(?Container $app = null)
@@ -111,6 +113,29 @@ class PipeManager
         return $this;
     }
 
+    /**
+     * Rethrow the fatal that ended the flow out of sendIt(), so a try/catch
+     * around the flow catches it. Off by default: sendIt() returns the
+     * envelope and the fatal is only recorded on it.
+     *
+     * Only a fatal that ends the flow is thrown: one from a hub with
+     * stopOnFatal(), or the fatal failureIsFatal() raises. A fatal that
+     * ends just its own hub lets the flow carry on and is not thrown.
+     * Everything else still happens first: the fatal is logged, then() is
+     * skipped and the log is persisted. The same PipeRuleFatal is thrown,
+     * so subject() is the envelope (its log included) and getPrevious()
+     * is the failure behind a failureIsFatal() fatal.
+     */
+    public function throwFatals($shouldThrow = true)
+    {
+        $this->throwFatals = (bool) $shouldThrow;
+
+        return $this;
+    }
+
+    /**
+     * @throws PipeRuleFatal with throwFatals(), when a fatal ended the flow
+     */
     public function sendIt()
     {
         if ($this->subject === null) {
@@ -124,6 +149,8 @@ class PipeManager
         }
 
         $subject->logger()->info('PipeManager:sendIt', 'Sending subject through all hubs', $this->getPipeManagerContext());
+
+        $fatal = null;
 
         try {
             $completed = false;
@@ -151,6 +178,8 @@ class PipeManager
                 throw $e;
             } catch (PipeRuleFatal $e) {
                 $subject->logger()->warning('PipeManager:sendIt', 'Flow stopped by a fatal: '.$e->getMessage(), $this->getPipeManagerContext());
+
+                $fatal = $e;
             } catch (Throwable $e) {
                 $subject->logger()->error('PipeManager:sendIt', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeManagerContext());
             }
@@ -168,6 +197,10 @@ class PipeManager
             if ($this->persistLogsOnFinalize) {
                 $subject->persist();
             }
+        }
+
+        if ($fatal && $this->throwFatals) {
+            throw $fatal->withSubject($subject);
         }
 
         return $subject;
@@ -221,5 +254,10 @@ class PipeManager
     public function persistsLogs(): bool
     {
         return $this->persistLogsOnFinalize;
+    }
+
+    public function throwsFatals(): bool
+    {
+        return $this->throwFatals;
     }
 }
