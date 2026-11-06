@@ -1,6 +1,6 @@
 # Pipe Dream
 
-Pipe Dream turns a Laravel pipeline into a flow you can read, and a log you can replay: every step named, timed and recorded.
+Pipe Dream turns a Laravel pipeline into a flow you can read, and a log you can read back: every step named, timed and recorded.
 
 ```bash
 composer require keaton-php/pipe-dream
@@ -253,7 +253,22 @@ class TidyTitle extends PipeRule
 }
 ```
 
-The method is called through Laravel's container, so **dependency injection just works**: ask for a class and you get it.
+The method is called through Laravel's container, so **dependency injection just works**: ask for a class and you get it. Here the rule asks for `Slugger`, a plain class of yours:
+
+<!-- example: docs/examples/Slugger.php -->
+```php
+<?php
+
+class Slugger
+{
+    public function slug(string $text): string
+    {
+        return trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($text)), '-');
+    }
+}
+```
+
+And the rule that uses it:
 
 <!-- example: docs/examples/SlugifyTitle.php -->
 ```php
@@ -275,7 +290,7 @@ class SlugifyTitle extends PipeRule
 }
 ```
 
-The first parameter is always **the envelope**, whatever you call it. Inside a rule, `$this->words = 3` and `$this->words` set and read a shared value on it (`$this->setWordsResult(3)` and `$this->getWordsResult()` do the same):
+The first parameter receives **the envelope**, whatever you call it (leave it untyped, or type it `PipeEnvelope`; a different class type there is resolved from the container instead). Inside a rule, `$this->words = 3` and `$this->words` set and read a shared value on it (`$this->setWordsResult(3)` and `$this->getWordsResult()` do the same):
 
 <!-- example: docs/examples/CountWords.php -->
 ```php
@@ -364,7 +379,7 @@ SlugifyTitle: 1
 
 ## All together
 
-Name each hub, describe it, fill it with rules, stack the hubs in a manager, and send the post through. Closures and rules mix freely. `skipIf()` leaves a whole hub out when it doesn't apply, and `then()` runs after a hub's last rule:
+Name each hub, describe it, fill it with rules, stack the hubs in a manager, and send the post through. Closures and rules mix freely. `skipIf()` skips a hub's rules when it doesn't apply (each is logged as skipped), and `then()` runs after a hub's last rule:
 
 <!-- example: docs/examples/scripts/together.php -->
 ```php
@@ -430,7 +445,7 @@ The flow reads like a table of contents, and the log tells the same story. With 
 
 A rule can stop things:
 
-- `$this->error('why')` records a failure (`PipeRule::FAIL`) and the hub carries on;
+- `$this->error('why')` records a failure (`PipeRule::FAIL`) and, by default, the hub carries on (see `stopOnError()` in the Reference);
 - `$this->fatal('why')` records a fatal (`PipeRule::FATAL_FAIL`) and ends the hub; give the hub `stopOnFatal()` and it ends the whole flow;
 - throwing `PipeRuleRedirect` (`PipeRuleRedirect::toUrl($url)` or `::toRoute($name)`) or `PipeRuleLoadView` (`PipeRuleLoadView::load($view, $data)`) hands control back to your controller.
 
@@ -761,7 +776,7 @@ A closure pipe's result is whatever it returns (nothing, or the subject itself, 
 | `->stopOnError()` | as default | the hub ends as a failure, `onFailure()` runs, the next hub runs | as default |
 | `->failureIsFatal()` | as default | as default (or the flow ends, with `stopOnError()`) | `onFailure()` runs, a fatal is logged and **the whole flow ends** |
 
-"Exception" means any `Throwable`, PHP errors such as `TypeError` included. For unexpected exceptions, only `withoutErrorHandling()` (called inside the rule) lets one escape a rule; otherwise it is logged as a `FAIL` and the hub carries on. Fatals, errors under `stopOnError()`, redirects, views and configuration errors leave a rule by design. `onFailure(fn ($subject, $exception) => …)` receives the exception as `$exception`. A fatal never leaves `sendIt()`: it is recorded on the envelope (`hasFatalErrors()`), and `sendIt()` returns the envelope as usual. A manager's `then()` runs after its last hub, unless the flow ended early.
+"Exception" means any `Throwable`, PHP errors such as `TypeError` included. For unexpected exceptions, only `withoutErrorHandling()` (called inside the rule) or `protected $rethrowErrors = true` on the rule lets one escape it; otherwise it is logged as a `FAIL` and the hub carries on. Fatals, errors under `stopOnError()`, redirects, views and configuration errors leave a rule by design. `onFailure(fn ($subject, $exception) => …)` receives the exception as `$exception`. A fatal never leaves `sendIt()`: it is recorded on the envelope (`hasFatalErrors()`), and `sendIt()` returns the envelope as usual. A manager's `then()` runs after its last hub, unless the flow ended early.
 
 ### Skipping, in one table
 
@@ -783,7 +798,7 @@ A closure pipe's result is whatever it returns (nothing, or the subject itself, 
 
 ### Reading the log
 
-Every record is an array with a `time`, a `key` (the rule class, a closure's file and line, or `PipeHub:sendIt` / `PipeManager:sendIt`), a `type` (`info`, `warning`, `error`, `fatal`, `timerStart`, `timerEnd`, `returnValue`), its `data` and a `context` array (hub records carry the hub's name and description). The logger has slices for the common questions: `errors()`, `fatals()`, `warnings()`, `timers()`, `returnValues()` and `recordsByKey($key)`; `$envelope->hasErrors()` and `$envelope->hasFatalErrors()` answer the most common ones, and `$envelope->results()` has `successes()`, `failures()`, `fatalFailures()` and `skips()`. Add your own lines with `$envelope->logger()->info($key, $message)`. Every envelope has a `runId()`, a uuid that identifies the run.
+Every record is an array with a `time`, a `key` (the rule class, a closure's file and line, or `PipeHub:sendIt` / `PipeManager:sendIt`), a `type` (`info`, `warning`, `error`, `fatal`, `timerStart`, `timerEnd`, `returnValue`), its `data` and a `context` array (a hub's start and skip records carry its name and description). The logger has slices for the common questions: `errors()`, `fatals()`, `warnings()`, `timers()`, `returnValues()` and `recordsByKey($key)`; `$envelope->hasErrors()` and `$envelope->hasFatalErrors()` answer the most common ones, and `$envelope->results()` has `successes()`, `failures()`, `fatalFailures()` and `skips()`. Add your own lines with `$envelope->logger()->info($key, $message)`. Every envelope has a `runId()`, a uuid that identifies the run.
 
 ### Log levels
 
