@@ -211,7 +211,7 @@ class PipeHub
      * sendIt() returns the envelope and the fatal is only recorded on it.
      *
      * Everything else still happens first: the fatal is logged, onFatal()
-     * runs, then() is skipped and the log is persisted (see persistLogs()).
+     * runs, then() does not run and the log is persisted (see persistLogs()).
      * The same PipeRuleFatal is thrown, so subject() is the envelope.
      *
      * Inside a PipeManager this setting is ignored: set throwFatals() on
