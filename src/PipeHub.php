@@ -458,6 +458,8 @@ class PipeHub
                 $this->log($subject, 'info', 'PipeHub:sendIt', 'Loading view '.$view->view);
 
                 throw $view;
+            } catch (PipeHubException $configurationError) {
+                throw $configurationError;
             } catch (Throwable $hookFailure) {
                 // The hub is already stopping: record the hook's own failure
                 // and carry on stopping exactly as planned.
@@ -481,12 +483,20 @@ class PipeHub
         }
 
         return function (Throwable $e) use ($subject, $onFlowError) {
-            if ($this->onError) {
-                $this->callViaContainer($this->onError, ['subject' => $subject, 'exception' => $e]);
-            }
+            try {
+                if ($this->onError) {
+                    $this->callViaContainer($this->onError, ['subject' => $subject, 'exception' => $e]);
+                }
 
-            if ($onFlowError) {
-                $onFlowError($e);
+                if ($onFlowError) {
+                    $onFlowError($e);
+                }
+            } catch (PipeRuleFatal $fatal) {
+                // A hook may escalate an error by throwing a fatal: record it
+                // like any other, so hasFatalErrors() reports it.
+                $subject->logger()->fatal('PipeHub:onError', $fatal->getMessage(), ['exception' => get_class($fatal)] + $this->getPipeHubContext());
+
+                throw $fatal;
             }
         };
     }
