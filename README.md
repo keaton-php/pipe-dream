@@ -18,6 +18,8 @@ The service provider is discovered automatically. Here is a flow written with Pi
 
 A **hub** is an ordered list of steps (called **pipes**) that a subject passes through. The subject can be anything: here it is an incoming ad click, as a plain object.
 
+`sendIt()` wraps the click in a `PipeEnvelope` and hands that to each pipe in turn. The envelope passes property reads, property writes and method calls straight through to your object, so `$click->country` and `$click->destination = …` work as you would expect. It also carries things of its own: values the pipes share, written with `set($key, $value)` and read with `get($key)`, every pipe's result, and a log.
+
 <!-- example: scripts/click-check.php -->
 ```php
 <?php
@@ -38,8 +40,6 @@ $envelope = PipeHub::create()
     ])
     ->sendIt($click);
 ```
-
-`sendIt()` wraps the click in a `PipeEnvelope` and hands that to each pipe in turn. The envelope passes property reads, property writes and method calls straight through to your object, so `$click->country` and `$click->destination = …` work as you would expect. It also carries things of its own: shared values (`set()` and `get()`), every pipe's result, and a log.
 
 Each pipe is timed and its result is recorded. A closure's result is whatever it returns; returning nothing counts as success (`1`). Print the log as a timeline:
 
@@ -69,7 +69,7 @@ A closure's log key is the file and line it was written on. Your times will diff
 
 ## The same hub, with PipeRule classes
 
-Closures are fine for small steps. For anything you want to name, test or reuse, write a rule class:
+Closures are fine for small steps. For anything you want to name, test or reuse, write a rule class. A rule has one public method named after the class. Its first parameter receives the envelope, whatever you call it; any other parameter is built and injected by Laravel's container (`RegionMap` below is an ordinary class of yours that maps CA, US and MX to North America). Inside the rule, `$this->info()` and `$this->warning()` write a line to the log against the rule:
 
 <!-- example: ResolveRegion.php -->
 ```php
@@ -128,8 +128,8 @@ $click->destination;                      // 'https://example.test/spring-sale'
 What a class gives you over a closure:
 
 - **A name and a description.** `$name` and `$description` are labels for people and tools. The demo's flow page, for instance, is rendered from them.
-- **Its own log key.** Records are filed under the rule's class name, and `$this->info()` and `$this->warning()` write lines against it.
-- **Dependencies.** The hub finds the public method named after the class (`resolveRegion()` in `ResolveRegion`; set `public static $runFunction = 'check';` to use another name) and calls it through Laravel's container. The first parameter receives the envelope, whatever you call it, and any other parameter is injected, like `RegionMap` here.
+- **Its own log key.** Everything the rule logs is filed under its class name.
+- **Dependencies.** The run method is called through the container, so it can ask for any service. The hub finds it by name (`resolveRegion()` in `ResolveRegion`); set `public static $runFunction = 'check';` to use another name.
 - **A recorded result.** The return value is stored on the envelope under the class name, so later rules can read it with `$click->get(ResolveRegion::class)`.
 
 `addPipe()` and `addPipes()` throw a `PipeHubException` for a class that does not exist or is not a `PipeRule`, so a typo never quietly drops a step.
@@ -171,7 +171,7 @@ class CheckCampaignStatus extends PipeRule
 | In the rule | Recorded | What happens next |
 |---|---|---|
 | `return self::SUCCESS;` (or return nothing) | `SUCCESS` (1) | the next pipe runs |
-| `return self::FAIL;` | `FAIL` (2) | the next pipe runs; nothing else is logged |
+| `return self::FAIL;` | `FAIL` (2) | the next pipe runs; no error record is added |
 | `return $this->skip('why');` | `SKIP` (4), and the reason | the next pipe runs |
 | `$this->error('why');` | `FAIL` (2), and an error record | the next pipe runs |
 | `$this->fatal('why');` | `FATAL_FAIL` (3), and a fatal record | the rest of this hub is skipped |
@@ -304,16 +304,41 @@ class RecordBudgetSpend extends PipeRule
         $this->withoutErrorHandling();
 
         $ledger->charge($click->campaign, 0.40);
+        $this->info("Charged {$click->campaign} 0.40");
 
         return self::SUCCESS;
     }
 }
 ```
 
-With the budget service down, `charge()` throws:
+`BudgetLedger` is an ordinary class of yours; this one can be told the budget service is down:
+
+<!-- example: BudgetLedger.php -->
+```php
+class BudgetLedger
+{
+    public function __construct(public bool $available = true)
+    {
+    }
+
+    public function charge(string $campaign, float $amount): void
+    {
+        if (! $this->available) {
+            throw new \RuntimeException('Budget service unavailable');
+        }
+
+        // A real ledger would write to the budget store here.
+    }
+}
+```
+
+With the ledger unavailable, `charge()` throws:
 
 <!-- example: scripts/on-failure.php -->
 ```php
+// The budget service is down, so every charge() throws.
+app()->instance(BudgetLedger::class, new BudgetLedger(available: false));
+
 $click = (object) ['id' => 'clk_128', 'campaign' => 'spring-sale', 'needsReview' => false, 'destination' => null];
 
 $envelope = PipeManager::create([
@@ -535,7 +560,7 @@ class HandleAdClick
                     ->addPipes([
                         CheckAdvertiserSuppressionList::class,
                     ])
-                    ->skipIf(fn ($click) => $click->campaign()->isNewsletter())
+                    ->skipIf(fn ($click) => $click->campaignSettings()->isNewsletter())
                     ->stopOnFatal(),
 
                 PipeHub::create()
@@ -556,7 +581,7 @@ class HandleAdClick
                         MatchKnownBotUserAgents::class,
                         ScoreClickVelocity::class,
                     ])
-                    ->skipIf(fn ($click) => $click->campaign()->bot_checks_disabled)
+                    ->skipIf(fn ($click) => $click->campaignSettings()->bot_checks_disabled)
                     ->then(fn ($click) => $click->get('bot_signals') >= 2 ? $click->flag('Two or more bot signals') : null),
 
                 PipeHub::create()
@@ -596,7 +621,7 @@ class HandleAdClick
 }
 ```
 
-The rules are ordinary `PipeRule` classes like the ones above, and `IncomingClick` is your own class: the envelope passes `$click->campaign()`, `$click->flag()` and the rest straight through to it. The controller persists once in `finally`, after recording how long the click took, so every click gets exactly one row, including the ones that redirect or end early.
+The rules are ordinary `PipeRule` classes like the ones above. `IncomingClick` is your own class: it has the same fields as the plain clicks in the earlier examples (`id`, `campaign`, `country`, `ip`, `userAgent`, `publisher`, `email`), so the same rules work on it, plus a few methods the flow calls through the envelope: `campaignSettings()` (the campaign's countries, type and bot-check switch), `flag()`, `isFlagged()`, `isListed()`, `isTest()`, `markComplete()` and `destination()`. The controller persists once in `finally`, after recording how long the click took, so every click gets exactly one row, including the ones that redirect or end early.
 
 ## See it running
 
@@ -617,7 +642,7 @@ A demo app pushes 500 synthetic ad clicks through a five-stage, 14-rule flow. Ev
 | `->stopOnError()` | as default | the hub ends as a failure, `onFailure()` runs, the next hub runs | as default |
 | `->failureIsFatal()` | as default | as default (or the flow ends, with `stopOnError()`) | `onFailure()` runs, a fatal is logged and **the whole flow ends** |
 
-"Exception" means any `Throwable`, PHP errors such as `TypeError` included. Only `withoutErrorHandling()` lets one escape a rule; otherwise it is logged as a `FAIL` and the hub carries on. A configuration error (`PipeHubException`) is never treated as a failure: it is thrown straight out of the flow.
+"Exception" means any `Throwable`, PHP errors such as `TypeError` included. For unexpected exceptions, only `withoutErrorHandling()` lets one escape a rule; otherwise it is logged as a `FAIL` and the hub carries on. Fatals, errors under `stopOnError()`, redirects, views and configuration errors leave a rule by design. A configuration error (`PipeHubException`) is never treated as a failure: it is thrown straight out of the flow.
 
 ### Skipping, in one table
 
@@ -637,26 +662,65 @@ A demo app pushes 500 synthetic ad clicks through a five-stage, 14-rule flow. Ev
 
 ### Events
 
-```php
-PipeHub::create()
-    ->name('Bot checks')
-    ->broadcastEventBefore(BotChecksStarted::class)          // before the first rule
-    ->broadcastEventAfter(BotChecksFinished::class)          // after the last rule, before then()
-    ->broadcastEventOnSkip(BotChecksSkipped::class)          // skip() or skipIf()
-    ->broadcastEventBeforeEachPipe(RuleStarting::class)      // just before each rule runs
-    ->broadcastEventAfterEachPipe(RuleFinished::class);      // as each rule hands off to the next
-```
+A hub can dispatch Laravel events at five points. Hub events are constructed with the envelope; per-rule events with the envelope and the rule's key. Declare the event classes:
 
-Events are dispatched through Laravel's event dispatcher in that order: `before`, then `beforeEach`/`afterEach` around each rule in turn, then `after`. Hub events are constructed with the envelope; per-rule events with the envelope and the rule's key:
-
+<!-- example: scripts/event-classes.php -->
 ```php
+use Keaton\PipeDream\PipeEnvelope;
+
+class BotChecksStarted
+{
+    public function __construct(public PipeEnvelope $click) {}
+}
+
+class BotChecksFinished
+{
+    public function __construct(public PipeEnvelope $click) {}
+}
+
+class BotChecksSkipped
+{
+    public function __construct(public PipeEnvelope $click) {}
+}
+
+class RuleStarting
+{
+    public function __construct(public PipeEnvelope $click, public ?string $rule = null) {}
+}
+
 class RuleFinished
 {
     public function __construct(public PipeEnvelope $click, public ?string $rule = null) {}
 }
 ```
 
-A rule that stops the hub never hands off, so its `afterEach` does not fire; skipped rules fire neither. Every dispatch is written to the log under `PipeHub:event`.
+Then name them on the hub:
+
+<!-- example: scripts/events.php -->
+```php
+$fired = [];
+
+Event::listen(
+    [BotChecksStarted::class, BotChecksFinished::class, BotChecksSkipped::class, RuleStarting::class, RuleFinished::class],
+    function ($event) use (&$fired) {
+        $fired[] = class_basename($event).(isset($event->rule) ? '('.class_basename($event->rule).')' : '');
+    }
+);
+
+PipeHub::create()
+    ->name('Bot checks')
+    ->addPipes([DetectHostingProviderIp::class, MatchKnownBotUserAgents::class])
+    ->broadcastEventBefore(BotChecksStarted::class)          // before the first rule
+    ->broadcastEventAfter(BotChecksFinished::class)          // after the last rule, before then()
+    ->broadcastEventOnSkip(BotChecksSkipped::class)          // instead of both, when the hub is skipped
+    ->broadcastEventBeforeEachPipe(RuleStarting::class)      // just before each rule runs
+    ->broadcastEventAfterEachPipe(RuleFinished::class)       // as each rule hands off to the next
+    ->sendIt((object) ['id' => 'clk_134', 'ip' => '203.0.113.9', 'userAgent' => 'Mozilla/5.0']);
+
+implode(', ', $fired);   // 'BotChecksStarted, RuleStarting(DetectHostingProviderIp), RuleFinished(DetectHostingProviderIp), RuleStarting(MatchKnownBotUserAgents), RuleFinished(MatchKnownBotUserAgents), BotChecksFinished'
+```
+
+`before` and `after` bracket the rules, `beforeEach`/`afterEach` surround each rule in turn, and a skipped hub dispatches only the skip event. A rule that stops the hub never hands off, so its `afterEach` does not fire; skipped rules fire neither. Every dispatch is written to the log under `PipeHub:event`.
 
 ### Rule copies: shared and transient bindings
 
@@ -685,7 +749,7 @@ composer install
 composer test
 ```
 
-The suite uses Orchestra Testbench, and its database tests run on in-memory SQLite. Every code example in this README is run by `tests/Feature/ReadmeExamplesTest.php`.
+The suite uses Orchestra Testbench, and its database tests run on in-memory SQLite. Every PHP example in this README is run, as written, by `tests/Feature/ReadmeExamplesTest.php`.
 
 ### Changelog and license
 

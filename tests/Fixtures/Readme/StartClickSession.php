@@ -8,7 +8,7 @@ class StartClickSession extends PipeRule
 {
     public function startClickSession($click)
     {
-        $click->set('session', 'sess_'.$click->param('click_id'));
+        $click->set('session', 'sess_'.$click->id);
 
         return self::SUCCESS;
     }

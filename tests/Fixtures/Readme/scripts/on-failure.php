@@ -2,10 +2,14 @@
 
 use Keaton\PipeDream\PipeHub;
 use Keaton\PipeDream\PipeManager;
+use Keaton\PipeDream\Tests\Fixtures\Readme\BudgetLedger;
 use Keaton\PipeDream\Tests\Fixtures\Readme\ChooseLandingPage;
 use Keaton\PipeDream\Tests\Fixtures\Readme\RecordBudgetSpend;
 
 // README:start
+// The budget service is down, so every charge() throws.
+app()->instance(BudgetLedger::class, new BudgetLedger(available: false));
+
 $click = (object) ['id' => 'clk_128', 'campaign' => 'spring-sale', 'needsReview' => false, 'destination' => null];
 
 $envelope = PipeManager::create([

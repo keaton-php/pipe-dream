@@ -4,16 +4,16 @@ namespace Keaton\PipeDream\Tests\Fixtures\Readme;
 
 class BudgetLedger
 {
-    public bool $available = true;
+    public function __construct(public bool $available = true)
+    {
+    }
 
-    public array $charges = [];
-
-    public function charge(?string $campaign, float $amount): void
+    public function charge(string $campaign, float $amount): void
     {
         if (! $this->available) {
             throw new \RuntimeException('Budget service unavailable');
         }
 
-        $this->charges[] = [$campaign, $amount];
+        // A real ledger would write to the budget store here.
     }
 }

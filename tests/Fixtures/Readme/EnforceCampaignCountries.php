@@ -8,7 +8,7 @@ class EnforceCampaignCountries extends PipeRule
 {
     public function enforceCampaignCountries($click)
     {
-        $targets = $click->campaign()->countries;
+        $targets = $click->campaignSettings()->countries;
 
         if (! in_array($click->country, $targets, true)) {
             $this->fatal("Visitor is in {$click->country}; campaign targets ".implode(', ', $targets));
