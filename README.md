@@ -871,6 +871,8 @@ class HandleAdClick
 }
 ```
 
+A fatal in any hub ends the click's flow, except in *Fulfillment & caps*: there `errorsAreFatal()` turns a failed charge into a fatal, and `fatalsStopThisHubOnly()` contains it to that hub, so the click is still routed.
+
 The controller saves the log once, in `finally`, after recording how long the click took (`->persistLogs(false)` stops the manager saving it first), so every click gets exactly one row, including the ones that end early or hand off to a view.
 
 All of these rules are in `docs/examples/`. Some have real bodies (`CheckAdvertiserSuppressionList`, `ChallengeGraylistedPublishers`, `DetectHostingProviderIp`, `MatchKnownBotUserAgents`, `RecordBudgetSpend`, and the small ones the tests rely on: `RequireTrackingParameters`, `RecognizeCampaign`, `StartClickSession`, `ResolveVisitorCountry`, `EnforceCampaignCountries`, `MatchIpBlacklist`, `ChooseDestination`); the rest are placeholders that only return `SUCCESS`, named for what your own rule would do (`VerifyClickSignature`, `SetAttributionCookie`, `RecordConversionPath`, `EnforceAdvertiserGeoExclusions`, `MatchPublisherBlacklist`, `ScoreClickVelocity`, `EnforceDailyClickCap`).
@@ -894,24 +896,32 @@ A demo app pushes 500 synthetic ad clicks through a five-stage, 14-rule flow lik
 | `return self::SUCCESS;` (or return nothing) | `SUCCESS` (1) | the next pipe runs |
 | `return self::FAIL;` | `FAIL` (2) | the next pipe runs; no error record is added |
 | `return $this->skip('why');` | `SKIP` (4), and the reason | the next pipe runs |
-| `$this->error('why');` | `FAIL` (2), and an error record | the next pipe runs |
-| `$this->fatal('why');` | `FATAL_FAIL` (3), and a fatal record | the rest of this hub is skipped |
-| any other exception or PHP error, except the three below | `FAIL` (2), and an error record | by default the next pipe runs (with `withoutErrorHandling()` or `$rethrowErrors = true` it escapes and ends the hub, see below) |
+| `$this->error('why');` | `FAIL` (2), and an error record | `onError()` runs, then the next pipe runs (unless errors are fatal, see below) |
+| `$this->fatal('why');` | `FATAL_FAIL` (3), and a fatal record | nothing after it runs: by default the rest of the flow, with `fatalsStopThisHubOnly()` the rest of this hub |
+| any other exception or PHP error, except the three below | `FAIL` (2), and an error record | as `error()` |
 
 A closure pipe's result is whatever it returns (nothing, or the subject itself, counts as `SUCCESS`). `error()` and `fatal()` records point at the line in your rule that called them. Three exceptions are not failures and are never recorded as `FAIL`: `PipeRuleRedirect` and `PipeRuleLoadView` hand control back to your controller, and `PipeHubException`, a configuration error, is thrown straight out of the flow.
 
 ### Stopping, in one table
 
-| On the hub (or manager) | A rule calls `fatal()` | A rule calls `error()` | An exception escapes a rule |
-|---|---|---|---|
-| (default) | the hub ends: its remaining rules and `then()` are skipped, the next hub runs | logged as `FAIL`, the hub carries on | the hub ends as a failure, `onFailure()` runs, the next hub runs |
-| `->stopOnFatal()` | **the whole flow ends**: no later hub, and the manager's `then()` does not run | as default | as default |
-| `->stopOnError()` | as default | the hub ends as a failure, `onFailure()` runs, the next hub runs | as default |
-| `->failureIsFatal()` | as default | as default (or the flow ends, with `stopOnError()`) | `onFailure()` runs, a fatal is logged and **the whole flow ends** |
-| `->throwFatals()` on the manager | as without it; when the fatal ended the whole flow (`stopOnFatal()`), `sendIt()` then **throws it** | as without it | as without it; when `failureIsFatal()` ended the whole flow, `sendIt()` then **throws its fatal** |
-| `->throwFatals()` on a hub run on its own | the hub ends as without it, then `sendIt()` **throws the fatal** (`stopOnFatal()` or not) | as without it | as without it; with `failureIsFatal()`, `sendIt()` then **throws its fatal** |
+How far a stop reaches:
 
-"Exception" means any `Throwable`, PHP errors such as `TypeError` included. For unexpected exceptions, only `withoutErrorHandling()` (called inside the rule) or `protected $rethrowErrors = true` on the rule lets one escape it; otherwise it is logged as a `FAIL` and the hub carries on. Fatals, errors under `stopOnError()`, redirects, views and configuration errors leave a rule by design. `onFailure(fn ($subject, $exception) => …)` receives the exception as `$exception`. `throwFatals()` combines with the hub rows above: it changes nothing about how a hub or flow stops, only whether `sendIt()` then throws. By default a fatal raised in a hub never leaves `sendIt()`: it is recorded on the envelope (`hasFatalErrors()`), and `sendIt()` returns the envelope as usual. (A `PipeRuleFatal` you throw from the manager's own `then()` is not caught; it leaves `sendIt()` like any other exception from that callback.) With `throwFatals()`, the fatal that ended the flow is thrown from `sendIt()` once it is logged, `then()` is skipped and the log is persisted under the same settings as without it. It is the same `PipeRuleFatal` instance, so `getPrevious()` is the failure behind a `failureIsFatal()` fatal, and `subject()` is the envelope (a `PipeRuleFatal` you construct yourself with a subject of its own keeps that subject). A hub's `throwFatals()` applies only when the hub runs on its own. A manager's `then()` runs after its last hub, unless the flow ended early.
+| On the hub | A rule calls `fatal()` | A rule calls `error()`, or throws an unexpected exception |
+|---|---|---|
+| (default) | **the whole flow stops**: the rest of this hub, every later hub, this hub's `then()` and the manager's `then()` are skipped; the hub's `onFatal()` runs, then the manager's | recorded as `FAIL`; the hub's `onError()` runs, then the manager's; the next pipe runs |
+| `->fatalsStopThisHubOnly()` | **this hub stops**: the rest of it and its `then()` are skipped and its `onFatal()` runs (not the manager's); the next hub runs, and the manager's `then()` still runs | as default |
+| `->errorsAreFatal()` | as default | handled as a `fatal()` (recorded as `FATAL_FAIL`, sent to `onFatal()` instead of `onError()`), so **the whole flow stops** |
+| both | as `fatalsStopThisHubOnly()` | handled as a `fatal()`, so **this hub stops** |
+
+How the stop reaches the caller, set on the manager (or on a hub run on its own; inside a manager a hub's own setting is ignored):
+
+| | Default | `->throwFatals()` |
+|---|---|---|
+| a fatal stops the flow | `sendIt()` returns the envelope; `hasFatalErrors()` is true | `sendIt()` throws the same `PipeRuleFatal`, after it is logged, `onFatal()` runs, `then()` is skipped and the log is persisted |
+| a fatal is contained to its hub | the flow carries on | the flow carries on, and nothing is thrown |
+| a redirect, view or configuration error | thrown from `sendIt()` | thrown from `sendIt()` |
+
+"Exception" means any `Throwable`, PHP errors such as `TypeError` included. A rule with `protected $errorsAreFatal = true;` handles its own errors and exceptions as fatals, as if its hub used `errorsAreFatal()`. Redirects, views and configuration errors (`PipeHubException`) are never errors or fatals. Something outside the pipes that fails (a `skipIf()` callback, an event listener, an `onError()` hook that throws) stops the hub as a fatal, which reaches as far as any other. An exception thrown by an `onFatal()` hook leaves `sendIt()` as it is (after the log is persisted), except from a hub's hook inside a manager: the manager then stops the flow as a fatal wrapping it. `onError()` and `onFatal()` receive the envelope and the exception, in their first and second parameters whatever those are called. The fatal thrown by `throwFatals()` is the same `PipeRuleFatal` instance the rule raised, so `getPrevious()` is the error or exception behind a fatal from `errorsAreFatal()`, and `subject()` is the envelope (a `PipeRuleFatal` you construct yourself with a subject of its own keeps that subject). By default a fatal raised in a hub never leaves `sendIt()`; a `PipeRuleFatal` you throw from the manager's own `then()` is not caught, and leaves `sendIt()` like any other exception from that callback.
 
 ### Skipping, in one table
 
@@ -926,7 +936,7 @@ A closure pipe's result is whatever it returns (nothing, or the subject itself, 
 
 - `public static $runFunction = 'check';` runs a method with another name.
 - `public static $saveResultAs = 'title_verdict';` also stores the rule's result under that key.
-- `protected $errorsAreFatal = true;` turns the rule's `error()` calls into fatals.
+- `protected $errorsAreFatal = true;` turns the rule's `error()` calls and unexpected exceptions into fatals.
 - `$this->foo = $value` / `$this->foo`, and `$this->setFooResult($value)` / `$this->getFooResult()`, write and read `foo` on the envelope while the rule runs.
 - Rule results are stored on the envelope under the class name: `$envelope->get(TidyTitle::class)`.
 - `addPipe()` and `addPipes()` throw a `PipeHubException` for a class that does not exist or is not a `PipeRule`, so a typo never quietly drops a step.
@@ -1024,7 +1034,7 @@ The `pipe_dream_logs` row holds the run id, the flow's name, the log (JSON), `ha
 
 ### Introspecting a flow
 
-Tools can read a flow back without reflection, which is how the demo renders its flow page from the same objects that process the clicks: `PipeManager::getName()`, `getDescription()`, `getHubs()`, `throwsFatals()`; `PipeHub::getName()`, `getDescription()`, `getPipes()`, `getSkipIf()`, `getThen()`, `getOnFailure()`, `getEvents()`, `stopsOnFatal()`, `stopsOnError()`, `isFailureFatal()`, `isSkipped()`, `throwsFatals()`.
+Tools can read a flow back without reflection, which is how the demo renders its flow page from the same objects that process the clicks: `PipeManager::getName()`, `getDescription()`, `getHubs()`, `getThen()`, `getOnError()`, `getOnFatal()`, `throwsFatals()`, `persistsLogs()`; `PipeHub::getName()`, `getDescription()`, `getPipes()`, `getSkipIf()`, `getThen()`, `getOnError()`, `getOnFatal()`, `getEvents()`, `stopsOnlyThisHubOnFatal()`, `treatsErrorsAsFatal()`, `isSkipped()`, `throwsFatals()`, `persistsLogs()`.
 
 ### Compatibility
 
