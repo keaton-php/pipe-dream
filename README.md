@@ -312,7 +312,7 @@ class CountWords extends PipeRule
 }
 ```
 
-A rule can also decide that it has nothing to do and **skip** itself. For a one-word title, this one records `PipeRule::SKIP` (4) and logs its reason:
+A rule can also decide that it has nothing to do and **skip** itself. For a one-word title, this one records `PipeRule::SKIP` (4) and logs its reason. It also uses `$this->error()`, which records a failure (`PipeRule::FAIL`) with its message and, by default, lets the hub carry on to the next rule:
 
 <!-- example: docs/examples/CheckTitleLength.php -->
 ```php
@@ -798,7 +798,7 @@ A closure pipe's result is whatever it returns (nothing, or the subject itself, 
 
 ### Reading the log
 
-Every record is an array with a `time`, a `key` (the rule class, a closure's file and line, or `PipeHub:sendIt` / `PipeManager:sendIt`), a `type` (`info`, `warning`, `error`, `fatal`, `timerStart`, `timerEnd`, `returnValue`), its `data` and a `context` array (a hub's start and skip records carry its name and description). The logger has slices for the common questions: `errors()`, `fatals()`, `warnings()`, `timers()`, `returnValues()` and `recordsByKey($key)`; `$envelope->hasErrors()` and `$envelope->hasFatalErrors()` answer the most common ones, and `$envelope->results()` has `successes()`, `failures()`, `fatalFailures()` and `skips()`. Add your own lines with `$envelope->logger()->info($key, $message)`. Every envelope has a `runId()`, a uuid that identifies the run.
+Every record is an array with a `time`, a `key` (usually the rule class, a closure's file and line, or a `PipeHub:…` / `PipeManager:…` name), a `type` (`info`, `warning`, `error`, `fatal`, `timerStart`, `timerEnd`, `returnValue`), its `data` and a `context` array (a hub's start and skip records carry its name and description). The logger has slices for the common questions: `errors()`, `fatals()`, `warnings()`, `timers()`, `returnValues()` and `recordsByKey($key)`; `$envelope->hasErrors()` and `$envelope->hasFatalErrors()` answer the most common ones, and `$envelope->results()` has `successes()`, `failures()`, `fatalFailures()` and `skips()`. Add your own lines with `$envelope->logger()->info($key, $message)`. Every envelope has a `runId()`, a uuid that identifies the run.
 
 ### Log levels
 
@@ -871,7 +871,7 @@ PipeHub::create()
 implode(', ', $fired);   // 'BotChecksStarted, RuleStarting(DetectHostingProviderIp), RuleFinished(DetectHostingProviderIp), RuleStarting(MatchKnownBotUserAgents), RuleFinished(MatchKnownBotUserAgents), BotChecksFinished'
 ```
 
-`before` and `after` bracket the rules, `beforeEach`/`afterEach` surround each rule in turn, and a skipped hub dispatches only the skip event. A rule that stops the hub never hands off, so its `afterEach` does not fire; skipped rules fire neither. Every dispatch is written to the log under `PipeHub:event`.
+`before` and `after` bracket the rules, `beforeEach`/`afterEach` surround each rule in turn, and a skipped hub dispatches only the skip event. A rule that stops the hub never hands off, so its `afterEach` does not fire; rules skipped without running (by `skipIf()`, `skipAll()` or the rule's own skip flag) fire neither, while a rule that runs and returns `$this->skip()` fires both like any other. Every dispatch is written to the log under `PipeHub:event`.
 
 ### Rule copies: shared and transient bindings
 
