@@ -51,6 +51,8 @@ trait PassesSubjectToCallbacks
         // A value no parameter took by name goes by position: the subject to
         // the first parameter, the exception to the second, whatever they are
         // called, when the type accepts it.
+        $assigned = [];
+
         foreach ($canonical as $index => $key) {
             $parameter = $declared[$index] ?? null;
 
@@ -60,13 +62,20 @@ trait PassesSubjectToCallbacks
 
             $name = $parameter->getName();
 
-            if (in_array($name, $canonical, true) || array_key_exists($name, $parameters)) {
+            // Taken already: by name, by an explicit parameter, or by the other value.
+            if (array_key_exists($name, $parameters) && ! in_array($name, $canonical, true) || isset($boundByName[$name]) || isset($assigned[$name])) {
                 continue;
             }
 
             if ($this->fits($key, $parameter, $values[$key])) {
+                // The canonical key may already hold the other value, moved
+                // there by position (`PipeEnvelope $exception, Throwable $subject`).
+                if (! isset($assigned[$key])) {
+                    unset($parameters[$key]);
+                }
+
                 $parameters[$name] = $values[$key];
-                unset($parameters[$key]);
+                $assigned[$name] = true;
             }
         }
 

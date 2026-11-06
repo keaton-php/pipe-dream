@@ -171,4 +171,32 @@ class CallbackParametersTest extends TestCase
         $this->assertSame([\Keaton\PipeDream\Exceptions\PipeRuleFatal::class, PipeEnvelope::class], $seen['reversed']);
         $this->assertSame([$journal, PipeRuleError::class], $seen['service then error']);
     }
+
+    public function test_a_value_freed_by_one_canonical_name_can_go_by_position_to_the_other(): void
+    {
+        $seen = [];
+
+        PipeHub::create()
+            ->addPipe(ErrorRule::class)
+            // The envelope does not fit $exception by name... but it is the first parameter.
+            ->onError(function (PipeEnvelope $exception) use (&$seen) {
+                $seen['envelope in $exception'] = $exception;
+            })
+            ->sendIt($first = PipeEnvelope::wrap(new stdClass()));
+
+        // Both names are on the wrong values: each goes by position instead.
+        $envelope = PipeEnvelope::wrap(new stdClass());
+
+        PipeHub::create()
+            ->addPipe(FatalRule::class)
+            ->onFatal(function (PipeEnvelope $exception, \Throwable $subject) use (&$seen) {
+                $seen['swapped'] = [$exception, get_class($subject)];
+            })
+            ->sendIt($envelope);
+
+        $this->assertSame($first, $seen['envelope in $exception']);
+        // The run's own envelope, not one the container built.
+        $this->assertSame($envelope, $seen['swapped'][0]);
+        $this->assertSame(\Keaton\PipeDream\Exceptions\PipeRuleFatal::class, $seen['swapped'][1]);
+    }
 }
