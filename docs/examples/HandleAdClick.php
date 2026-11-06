@@ -28,8 +28,7 @@ class HandleAdClick
                         VerifyClickSignature::class,
                         RecognizeCampaign::class,
                         StartClickSession::class,
-                    ])
-                    ->stopOnFatal(),             // a bad click ends the whole flow here
+                    ]),                          // a fatal here (a bad click) ends the whole flow
 
                 PipeHub::create()
                     ->name('Tracking')
@@ -46,8 +45,7 @@ class HandleAdClick
                         ResolveVisitorCountry::class,
                         EnforceCampaignCountries::class,
                         EnforceAdvertiserGeoExclusions::class,
-                    ])
-                    ->stopOnFatal(),
+                    ]),
 
                 PipeHub::create()
                     ->name('Suppression')
@@ -55,8 +53,7 @@ class HandleAdClick
                     ->addPipes([
                         CheckAdvertiserSuppressionList::class,
                     ])
-                    ->skipIf(fn ($click) => $click->campaignSettings()->isNewsletter())
-                    ->stopOnFatal(),
+                    ->skipIf(fn ($click) => $click->campaignSettings()->isNewsletter()),
 
                 PipeHub::create()
                     ->name('Blacklist & graylist')
@@ -86,7 +83,9 @@ class HandleAdClick
                         EnforceDailyClickCap::class,
                         RecordBudgetSpend::class,
                     ])
-                    ->skipIf(fn ($click) => $click->isFlagged() || $click->isTest()),
+                    ->skipIf(fn ($click) => $click->isFlagged() || $click->isTest())
+                    ->errorsAreFatal()           // a failed charge ends this hub...
+                    ->fatalsStopThisHubOnly(),   // ...but the click is still routed
 
                 PipeHub::create()
                     ->name('Route')

@@ -5,11 +5,13 @@ namespace Keaton\PipeDream\Concerns;
 trait PassesSubjectToCallbacks
 {
     /**
-     * Callbacks (skipIf, then, onFailure, closure pipes) and rule methods
+     * Callbacks (skipIf, then, onError, onFatal, closure pipes) and rule methods
      * receive the subject. The container matches parameters by name, so
      * `fn ($subject) => ...` always worked but `fn ($s) => ...` threw. Hand
      * the subject to the first parameter whatever it is called, unless that
-     * parameter asks for a class the subject is not an instance of.
+     * parameter asks for a class the subject is not an instance of. The
+     * onError() / onFatal() hooks likewise hand the exception to the second
+     * parameter, so `fn ($post, $fatal) => ...` works too.
      */
     protected function withSubjectParameter($callback, array $parameters): array
     {
@@ -25,21 +27,33 @@ trait PassesSubjectToCallbacks
             return $parameters;
         }
 
-        $first = $reflection->getParameters()[0] ?? null;
+        $positions = ['subject'];
 
-        if (! $first || array_key_exists($first->getName(), $parameters)) {
-            return $parameters;
+        if (array_key_exists('exception', $parameters)) {
+            $positions[] = 'exception';
         }
 
-        $type = $first->getType();
-        $acceptsSubject = ! $type instanceof \ReflectionNamedType
-            || $type->isBuiltin()
-            || $parameters['subject'] instanceof ($type->getName());
+        foreach ($positions as $index => $key) {
+            $parameter = $reflection->getParameters()[$index] ?? null;
 
-        if ($acceptsSubject) {
-            $parameters[$first->getName()] = $parameters['subject'];
+            if (! $parameter || array_key_exists($parameter->getName(), $parameters)) {
+                continue;
+            }
+
+            if ($this->parameterAccepts($parameter, $parameters[$key])) {
+                $parameters[$parameter->getName()] = $parameters[$key];
+            }
         }
 
         return $parameters;
+    }
+
+    private function parameterAccepts(\ReflectionParameter $parameter, $value): bool
+    {
+        $type = $parameter->getType();
+
+        return ! $type instanceof \ReflectionNamedType
+            || $type->isBuiltin()
+            || $value instanceof ($type->getName());
     }
 }

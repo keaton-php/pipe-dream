@@ -20,15 +20,16 @@ use Keaton\PipeDream\Tests\Fixtures\Rules\LoadViewRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\RedirectRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\SecondRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\ThirdRule;
-use Keaton\PipeDream\Tests\Fixtures\Rules\UnhandledExplodingRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\ExplodingRule;
 use Keaton\PipeDream\Tests\TestCase;
 use RuntimeException;
 use stdClass;
 
 /**
  * throwFatals(): opt-in, set on the outermost level (the manager, or a hub
- * run on its own). Only a fatal that ends the flow is thrown, and only after
- * everything that happens without it: the fatal is logged, then() is skipped
+ * run on its own). Only a fatal that stops the flow is thrown (never one
+ * contained by fatalsStopThisHubOnly()), and only after everything that
+ * happens without it: the fatal is logged, onFatal() runs, then() is skipped
  * and the log is persisted.
  */
 class ThrowFatalsTest extends TestCase
@@ -96,7 +97,7 @@ class ThrowFatalsTest extends TestCase
     public function test_a_manager_throws_the_fatal_that_ended_the_flow_after_persisting(): void
     {
         $e = $this->catchFatal(fn () => $this->manager(
-            PipeHub::create()->addPipes([FatalRule::class, SecondRule::class])->stopOnFatal()
+            PipeHub::create()->addPipes([FatalRule::class, SecondRule::class])
         )->throwFatals()->sendIt());
 
         // No later rule or hub, neither then(), and the log was saved before the catch ran.
@@ -123,7 +124,7 @@ class ThrowFatalsTest extends TestCase
         $thrown = new PipeRuleFatal('By hand');
 
         $caught = $this->catchFatal(fn () => PipeManager::create([
-            PipeHub::create()->addPipe(fn () => throw $thrown)->stopOnFatal(),
+            PipeHub::create()->addPipe(fn () => throw $thrown),
         ])->subject(new stdClass())->throwFatals()->sendIt());
 
         $this->assertSame($thrown, $caught);
@@ -137,16 +138,16 @@ class ThrowFatalsTest extends TestCase
         $mine = new stdClass();
 
         $caught = $this->catchFatal(fn () => PipeManager::create([
-            PipeHub::create()->addPipe(fn () => throw new PipeRuleFatal('Mine', $mine))->stopOnFatal(),
+            PipeHub::create()->addPipe(fn () => throw new PipeRuleFatal('Mine', $mine)),
         ])->subject(new stdClass())->throwFatals()->sendIt());
 
         $this->assertSame($mine, $caught->subject());
     }
 
-    public function test_a_fatal_that_ends_only_its_hub_is_not_thrown(): void
+    public function test_a_contained_fatal_is_not_thrown(): void
     {
         $envelope = $this->manager(
-            PipeHub::create()->addPipes([FatalRule::class, SecondRule::class])
+            PipeHub::create()->addPipes([FatalRule::class, SecondRule::class])->fatalsStopThisHubOnly()
         )->throwFatals()->sendIt();
 
         // Exactly as without throwFatals(): the flow carries on and completes.
@@ -155,40 +156,49 @@ class ThrowFatalsTest extends TestCase
         $this->assertSame(1, $this->persist->calls);
     }
 
-    public function test_a_hub_fatal_is_not_thrown_even_when_a_later_hub_ends_cleanly(): void
+    public function test_a_contained_fatal_is_not_thrown_when_a_later_hub_ends_cleanly(): void
     {
         $envelope = PipeManager::create([
-            PipeHub::create()->addPipe(FatalRule::class),
-            PipeHub::create()->addPipe(SecondRule::class)->stopOnFatal(),
+            PipeHub::create()->addPipe(FatalRule::class)->fatalsStopThisHubOnly(),
+            PipeHub::create()->addPipe(SecondRule::class),
         ])->subject(new stdClass())->throwFatals()->sendIt();
 
         $this->assertSame(['FatalRule', 'SecondRule'], Journal::$entries);
         $this->assertTrue($envelope->hasFatalErrors());
     }
 
-    public function test_a_manager_throws_the_fatal_failure_is_fatal_raises(): void
+    public function test_a_manager_throws_the_fatal_errors_are_fatal_raises(): void
     {
         $e = $this->catchFatal(fn () => $this->manager(
             PipeHub::create()
-                ->addPipes([UnhandledExplodingRule::class, SecondRule::class])
-                ->failureIsFatal()
-                ->onFailure(fn () => Journal::record('onFailure'))
+                ->addPipes([ExplodingRule::class, SecondRule::class])
+                ->errorsAreFatal()
+                ->onFatal(fn () => Journal::record("onFatal after {$this->persist->calls} persist"))
         )->throwFatals()->sendIt());
 
-        $this->assertSame(['FirstRule', 'UnhandledExplodingRule', 'onFailure', 'caught after 1 persist'], Journal::$entries);
-        $this->assertSame('Boom, unhandled', $e->getMessage());
+        $this->assertSame(['FirstRule', 'ExplodingRule', 'onFatal after 0 persist', 'caught after 1 persist'], Journal::$entries);
+        $this->assertSame('Boom', $e->getMessage());
         $this->assertInstanceOf(RuntimeException::class, $e->getPrevious());
-        $this->assertSame('Boom, unhandled', $e->getPrevious()->getMessage());
-        $this->assertStringStartsWith('Failure is fatal', $e->subject()->logger()->fatals()->last()['data']);
+        $this->assertSame('Boom', $e->getPrevious()->getMessage());
+        $this->assertSame(PipeRule::FATAL_FAIL, $e->subject()->get(ExplodingRule::class));
     }
 
-    public function test_a_failure_that_is_not_fatal_is_not_thrown(): void
+    public function test_hooks_run_before_the_log_is_saved_and_the_fatal_thrown(): void
+    {
+        $this->catchFatal(fn () => $this->manager(
+            PipeHub::create()->addPipe(FatalRule::class)->onFatal(fn () => Journal::record("hub onFatal after {$this->persist->calls} persist"))
+        )->onFatal(fn () => Journal::record("manager onFatal after {$this->persist->calls} persist"))->throwFatals()->sendIt());
+
+        $this->assertSame(['FirstRule', 'FatalRule', 'hub onFatal after 0 persist', 'manager onFatal after 0 persist', 'caught after 1 persist'], Journal::$entries);
+    }
+
+    public function test_an_exception_that_is_not_fatal_is_not_thrown(): void
     {
         $envelope = $this->manager(
-            PipeHub::create()->addPipes([UnhandledExplodingRule::class, SecondRule::class])
+            PipeHub::create()->addPipes([ExplodingRule::class, SecondRule::class])
         )->throwFatals()->sendIt();
 
-        $this->assertSame(['FirstRule', 'UnhandledExplodingRule', 'ThirdRule', 'manager then'], Journal::$entries);
+        $this->assertSame(['FirstRule', 'ExplodingRule', 'SecondRule', 'middle then', 'ThirdRule', 'manager then'], Journal::$entries);
         $this->assertTrue($envelope->hasErrors());
         $this->assertFalse($envelope->hasFatalErrors());
     }
@@ -196,16 +206,16 @@ class ThrowFatalsTest extends TestCase
     public function test_an_error_is_not_thrown(): void
     {
         $envelope = $this->manager(
-            PipeHub::create()->addPipes([ErrorRule::class, SecondRule::class])->stopOnError()
+            PipeHub::create()->addPipes([ErrorRule::class, SecondRule::class])
         )->throwFatals()->sendIt();
 
-        $this->assertSame(['FirstRule', 'ErrorRule', 'ThirdRule', 'manager then'], Journal::$entries);
+        $this->assertSame(['FirstRule', 'ErrorRule', 'SecondRule', 'middle then', 'ThirdRule', 'manager then'], Journal::$entries);
         $this->assertTrue($envelope->hasErrors());
     }
 
     public function test_a_manager_with_no_fatal_returns_the_envelope(): void
     {
-        $envelope = $this->manager(PipeHub::create()->addPipe(SecondRule::class)->stopOnFatal())->throwFatals()->sendIt();
+        $envelope = $this->manager(PipeHub::create()->addPipe(SecondRule::class))->throwFatals()->sendIt();
 
         $this->assertInstanceOf(PipeEnvelope::class, $envelope);
         $this->assertSame(['FirstRule', 'SecondRule', 'middle then', 'ThirdRule', 'manager then'], Journal::$entries);
@@ -214,7 +224,7 @@ class ThrowFatalsTest extends TestCase
     public function test_a_manager_still_throws_when_it_does_not_persist(): void
     {
         $this->catchFatal(fn () => PipeManager::create([
-            PipeHub::create()->addPipe(FatalRule::class)->stopOnFatal(),
+            PipeHub::create()->addPipe(FatalRule::class),
         ])->subject(new stdClass())->persistLogs(false)->throwFatals()->sendIt());
 
         $this->assertSame(['FatalRule', 'caught after 0 persist'], Journal::$entries);
@@ -222,7 +232,7 @@ class ThrowFatalsTest extends TestCase
 
     public function test_by_default_a_manager_returns_the_envelope_after_a_fatal_ends_the_flow(): void
     {
-        $envelope = $this->manager(PipeHub::create()->addPipe(FatalRule::class)->stopOnFatal())->sendIt();
+        $envelope = $this->manager(PipeHub::create()->addPipe(FatalRule::class))->sendIt();
 
         $this->assertTrue($envelope->hasFatalErrors());
         $this->assertSame(['FirstRule', 'FatalRule'], Journal::$entries);
@@ -230,15 +240,15 @@ class ThrowFatalsTest extends TestCase
 
     public function test_a_hubs_own_throw_fatals_is_ignored_inside_a_manager(): void
     {
-        // Ends only its hub: the flow carries on.
-        $envelope = $this->manager(PipeHub::create()->addPipes([FatalRule::class, SecondRule::class])->throwFatals())->sendIt();
+        // Contained to its hub: the flow carries on.
+        $envelope = $this->manager(PipeHub::create()->addPipes([FatalRule::class, SecondRule::class])->fatalsStopThisHubOnly()->throwFatals())->sendIt();
         $this->assertSame(['FirstRule', 'FatalRule', 'ThirdRule', 'manager then'], Journal::$entries);
         $this->assertTrue($envelope->hasFatalErrors());
 
         Journal::reset();
 
         // Ends the flow, but the manager does not throw it.
-        $envelope = $this->manager(PipeHub::create()->addPipe(FatalRule::class)->stopOnFatal()->throwFatals())->sendIt();
+        $envelope = $this->manager(PipeHub::create()->addPipe(FatalRule::class)->throwFatals())->sendIt();
         $this->assertSame(['FirstRule', 'FatalRule'], Journal::$entries);
         $this->assertTrue($envelope->hasFatalErrors());
     }
@@ -266,13 +276,12 @@ class ThrowFatalsTest extends TestCase
 
         $e = $this->catchFatal(fn () => $hub->sendIt(new stdClass()));
 
-        // No stopOnFatal() needed: on its own the hub is the flow.
         $this->assertSame(['FirstRule', 'FatalRule', 'caught after 1 persist'], Journal::$entries);
         $this->assertSame($hub->getSubject(), $e->subject());
         $this->assertTrue($e->subject()->hasFatalErrors());
 
         $logs = $e->subject()->logs();
-        $this->assertSame('hub', $e->subject()->logger()->warnings()->firstWhere('key', 'PipeHub:sendIt')['context']['ends']);
+        $this->assertSame('flow', $e->subject()->logger()->warnings()->firstWhere('key', 'PipeHub:sendIt')['context']['ends']);
         $this->assertSame(['PipeHub:sendIt', 'Finalized result!'], [end($logs)['key'], end($logs)['data']]);
         $this->assertSame([count($logs)], $this->persist->recordCounts);
     }
@@ -287,23 +296,24 @@ class ThrowFatalsTest extends TestCase
         $this->assertInstanceOf(PipeEnvelope::class, $caught->subject());
     }
 
-    public function test_a_standalone_hub_throws_with_stop_on_fatal_too(): void
+    public function test_a_standalone_hub_throws_with_fatals_stop_this_hub_only_too(): void
     {
-        $this->catchFatal(fn () => PipeHub::create()->addPipe(FatalRule::class)->stopOnFatal()->throwFatals()->sendIt(new stdClass()));
+        // On its own the hub is the whole flow, so there is nothing to contain the fatal to.
+        $this->catchFatal(fn () => PipeHub::create()->addPipe(FatalRule::class)->fatalsStopThisHubOnly()->throwFatals()->sendIt(new stdClass()));
 
         $this->assertSame(['FatalRule', 'caught after 1 persist'], Journal::$entries);
     }
 
-    public function test_a_standalone_hub_throws_the_fatal_failure_is_fatal_raises(): void
+    public function test_a_standalone_hub_throws_the_fatal_errors_are_fatal_raises(): void
     {
         $e = $this->catchFatal(fn () => PipeHub::create()
-            ->addPipe(UnhandledExplodingRule::class)
-            ->failureIsFatal()
-            ->onFailure(fn () => Journal::record('onFailure'))
+            ->addPipe(ExplodingRule::class)
+            ->errorsAreFatal()
+            ->onFatal(fn () => Journal::record("onFatal after {$this->persist->calls} persist"))
             ->throwFatals()
             ->sendIt(new stdClass()));
 
-        $this->assertSame(['UnhandledExplodingRule', 'onFailure', 'caught after 1 persist'], Journal::$entries);
+        $this->assertSame(['ExplodingRule', 'onFatal after 0 persist', 'caught after 1 persist'], Journal::$entries);
         $this->assertInstanceOf(RuntimeException::class, $e->getPrevious());
     }
 
@@ -349,7 +359,7 @@ class ThrowFatalsTest extends TestCase
                 try {
                     $standalone
                         ? PipeHub::create()->addPipe($rule)->throwFatals()->sendIt(new stdClass())
-                        : PipeManager::create([PipeHub::create()->addPipe($rule)->stopOnFatal()])->subject(new stdClass())->throwFatals()->sendIt();
+                        : PipeManager::create([PipeHub::create()->addPipe($rule)])->subject(new stdClass())->throwFatals()->sendIt();
                     $this->fail("{$exception} did not leave sendIt()");
                 } catch (PipeRuleFatal $e) {
                     $this->fail("{$exception} became a fatal");

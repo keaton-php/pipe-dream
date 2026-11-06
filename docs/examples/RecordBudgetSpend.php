@@ -9,9 +9,6 @@ class RecordBudgetSpend extends PipeRule
 
     public function recordBudgetSpend($click, BudgetLedger $ledger)
     {
-        // If the ledger throws, let the exception reach the hub.
-        $this->withoutErrorHandling();
-
         $ledger->charge($click->campaign, 0.40);
         $this->info("Charged {$click->campaign} 0.40");
 

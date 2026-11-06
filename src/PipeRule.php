@@ -45,14 +45,11 @@ abstract class PipeRule
 
     protected $defaultResult = self::SUCCESS;
 
-    /** Rethrow unexpected exceptions instead of logging them (see withoutErrorHandling()). */
-    protected $rethrowErrors = false;
-
-    /** Treat a PipeRuleError raised by this rule as a PipeRuleFatal. */
+    /**
+     * Treat this rule's error() calls and unexpected exceptions as fatals
+     * (a hub's errorsAreFatal() does the same for every rule in it, per run).
+     */
     protected $errorsAreFatal = false;
-
-    /** End the hub when this rule raises a PipeRuleError (a hub's stopOnError() also applies, per run). */
-    protected $stopOnError = false;
 
     protected $shouldSkip = false;
 
@@ -71,21 +68,20 @@ abstract class PipeRule
 
     protected ?string $policySkipReason = null;
 
-    protected bool $policyStopOnError = false;
+    protected bool $policyErrorsAreFatal = false;
 
-    /** Set by withoutErrorHandling() for the current run only. */
-    protected bool $runRethrowErrors = false;
+    /** Told about every error this rule records and carries on past. */
+    protected ?Closure $policyOnError = null;
 
     protected ?Container $container = null;
 
     protected $subject;
 
-    public function __construct(?bool $errorsAreFatal = null, ?bool $stopOnError = null, ?bool $shouldSkip = null)
+    public function __construct(?bool $errorsAreFatal = null, ?bool $shouldSkip = null)
     {
         // Only override the class defaults when told to, so a subclass can
         // declare `protected $errorsAreFatal = true;`.
         $this->errorsAreFatal = $errorsAreFatal ?? $this->errorsAreFatal;
-        $this->stopOnError = $stopOnError ?? $this->stopOnError;
         $this->shouldSkip = $shouldSkip ?? $this->shouldSkip;
     }
 
@@ -116,11 +112,12 @@ abstract class PipeRule
      *
      * @internal Called by PipeHub before each run.
      */
-    public function applyPolicy(bool $skip, ?string $skipReason, bool $stopOnError)
+    public function applyPolicy(bool $skip, ?string $skipReason, bool $errorsAreFatal, ?Closure $onError = null)
     {
         $this->policySkip = $skip;
         $this->policySkipReason = $skip ? $skipReason : null;
-        $this->policyStopOnError = $stopOnError;
+        $this->policyErrorsAreFatal = $errorsAreFatal;
+        $this->policyOnError = $onError;
 
         return $this;
     }
@@ -138,13 +135,6 @@ abstract class PipeRule
     public function wasSkipped(): bool
     {
         return $this->wasSkipped;
-    }
-
-    public function setStopOnError(bool $stop = true)
-    {
-        $this->stopOnError = $stop;
-
-        return $this;
     }
 
     /**
@@ -250,7 +240,6 @@ abstract class PipeRule
     public function handle($subject, Closure $next)
     {
         $this->register($subject);
-        $this->runRethrowErrors = false;
         $this->wasSkipped = $this->willSkip($subject);
 
         try {
@@ -261,20 +250,7 @@ abstract class PipeRule
                 $subject = $this->execute($subject) ?? $subject;
             }
         } catch (PipeRuleError $e) {
-            if ($this->errorsAreFatal) {
-                $this->logExecutionResult($this->subject, $this->ruleKey(), self::FATAL_FAIL);
-                $this->registerException($e, self::FATAL);
-
-                throw (new PipeRuleFatal($e->getMessage(), $this->subject, $e->getCode(), $e))
-                    ->setOrigin($e->originFile(), $e->originLine());
-            }
-
-            $this->logExecutionResult($this->subject, $this->ruleKey(), self::FAIL);
-            $this->registerException($e);
-
-            if ($this->stopOnError || $this->policyStopOnError) {
-                throw $e;
-            }
+            $this->recordError($e, $e->originFile(), $e->originLine());
         } catch (PipeRuleFatal $e) {
             $this->logExecutionResult($this->subject, $this->ruleKey(), self::FATAL_FAIL);
             $this->registerException($e, self::FATAL);
@@ -286,13 +262,9 @@ abstract class PipeRule
             // A view hand-off, or a misconfigured flow started inside this rule.
             throw $e;
         } catch (Throwable $e) {
-            // Anything else, including PHP errors such as a TypeError.
-            $this->logExecutionResult($this->subject, $this->ruleKey(), self::FAIL);
-            $this->registerException($e);
-
-            if ($this->rethrowErrors || $this->runRethrowErrors) {
-                throw $e;
-            }
+            // Anything else, including PHP errors such as a TypeError: an
+            // unexpected exception is handled like error().
+            $this->recordError($e, $e->getFile(), $e->getLine());
         } finally {
             $this->unregister();
         }
@@ -307,12 +279,30 @@ abstract class PipeRule
     }
 
     /**
-     * Let unexpected exceptions escape this rule (the hub then treats them as
-     * a failure) instead of logging them and carrying on.
+     * An error() or unexpected exception: recorded as FAIL and reported to
+     * the hub's onError(), and the next pipe runs; or, when errors are fatal
+     * (this rule's $errorsAreFatal or the hub's errorsAreFatal()), recorded
+     * as FATAL_FAIL and rethrown as a PipeRuleFatal wrapping it.
+     *
+     * @throws PipeRuleFatal when errors are fatal
      */
-    protected function withoutErrorHandling()
+    protected function recordError(Throwable $e, string $file, int $line): void
     {
-        $this->runRethrowErrors = true;
+        if ($this->errorsAreFatal || $this->policyErrorsAreFatal) {
+            $this->logExecutionResult($this->subject, $this->ruleKey(), self::FATAL_FAIL);
+            $this->registerException($e, self::FATAL);
+
+            // getCode() is not always an int (PDOException), and an Exception code must be.
+            throw (new PipeRuleFatal($e->getMessage(), $this->subject, is_int($e->getCode()) ? $e->getCode() : 0, $e))
+                ->setOrigin($file, $line);
+        }
+
+        $this->logExecutionResult($this->subject, $this->ruleKey(), self::FAIL);
+        $this->registerException($e);
+
+        if ($this->policyOnError) {
+            ($this->policyOnError)($e);
+        }
     }
 
     protected function registerException($exception, $type = self::ERROR)
@@ -345,8 +335,9 @@ abstract class PipeRule
     }
 
     /**
-     * Stop: the result is FATAL_FAIL and the hub ends (the flow too, with
-     * stopOnFatal()).
+     * Stop: the result is FATAL_FAIL and nothing after this rule runs, in
+     * this hub or any later one (unless the hub uses fatalsStopThisHubOnly(),
+     * which ends only this hub).
      */
     protected function fatal($message)
     {
@@ -354,8 +345,9 @@ abstract class PipeRule
     }
 
     /**
-     * Fail: the result is FAIL and the hub carries on (unless stopOnError()
-     * or $errorsAreFatal).
+     * Fail: the result is FAIL, the hub's onError() runs and the next pipe
+     * runs (unless errors are fatal: the rule's $errorsAreFatal or the hub's
+     * errorsAreFatal()).
      */
     protected function error($message)
     {

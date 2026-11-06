@@ -30,13 +30,13 @@ class ReentrantRule extends PipeRule
         PipeHub::create(static::$innerContainer)
             ->addPipe(static::class)
             ->skipIf(fn () => true)
-            ->stopOnError()
+            ->errorsAreFatal()
             ->persistLogs(false)
             ->sendIt($inner);
 
         Journal::record('outer subject intact: '.($this->subject === $subject ? 'yes' : 'no'));
         Journal::record('outer skipping: '.($this->willSkip($subject) ? 'yes' : 'no'));
-        Journal::record('outer stops on error: '.($this->policyStopOnError ? 'yes' : 'no'));
+        Journal::record('outer errors are fatal: '.($this->policyErrorsAreFatal ? 'yes' : 'no'));
         Journal::record('outer container is the inner one: '.($this->container() === static::$innerContainer ? 'yes' : 'no'));
 
         $this->info('after the nested run');

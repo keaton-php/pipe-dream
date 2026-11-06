@@ -7,10 +7,10 @@ use Keaton\PipeDream\Concerns\RecordsOrigin;
 use Throwable;
 
 /**
- * A rule hit something it cannot continue past. By default a fatal ends the
- * hub it happened in; with stopOnFatal() on that hub it ends the whole flow.
- * It leaves sendIt() only with throwFatals(), and then subject() is the
- * envelope.
+ * A rule hit something it cannot continue past. A fatal ends the whole flow
+ * (only its own hub, when that hub uses fatalsStopThisHubOnly() inside a
+ * manager). It leaves sendIt() only with throwFatals(), and then subject()
+ * is the envelope.
  */
 class PipeRuleFatal extends Exception
 {

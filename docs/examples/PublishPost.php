@@ -13,8 +13,7 @@ class PublishPost
             $envelope = PipeManager::create([
                 PipeHub::create()
                     ->name('Check')
-                    ->addPipes([RejectEmptyTitle::class, SendDraftsToPreview::class])
-                    ->stopOnFatal(),
+                    ->addPipes([RejectEmptyTitle::class, SendDraftsToPreview::class]),
 
                 PipeHub::create()
                     ->name('Publish')
