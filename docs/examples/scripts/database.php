@@ -6,15 +6,13 @@ use Keaton\PipeDream\PipeHub;
 use Keaton\PipeDream\PipeManager;
 use Keaton\PipeDream\Strategies\DatabasePersistStrategy;
 
-$click = (object) ['id' => 'clk_133', 'campaign' => 'spring-sale', 'country' => 'CA'];
+$post = (object) ['title' => '  hello,   PIPE dream  '];
 
-$envelope = PipeEnvelope::wrap($click)->persistWith(new DatabasePersistStrategy());
+$envelope = PipeEnvelope::wrap($post)->persistWith(new DatabasePersistStrategy());
 
 PipeManager::create([
-    PipeHub::create()->name('Validate')->addPipes([CheckCampaignStatus::class]),
-    PipeHub::create()->name('Route')->addPipes([ResolveRegion::class, ChooseLandingPage::class]),
-])->name('Ad click intake')->subject($envelope)->sendIt();
-
-$envelope->persist();                     // saving again updates the same row
+    PipeHub::create()->name('Tidy')->addPipes([TidyTitle::class]),
+    PipeHub::create()->name('Slug')->addPipes([SlugifyTitle::class]),
+])->name('Publish a post')->subject($envelope)->sendIt();
 
 PipeDreamLog::where('run_id', $envelope->runId())->count();   // 1
