@@ -7,7 +7,7 @@ use Keaton\PipeDream\PipeRule;
 $publish = function (string $title, ?Closure $check = null, ?Closure $edit = null) {
     $check ??= fn (PipeHub $hub) => $hub;
     $edit ??= fn (PipeHub $hub) => $hub;
-    $managerThen = 'skipped';
+    $managerThen = 'did not run';
 
     $envelope = PipeManager::create([
         $check(PipeHub::create()->name('Check')->addPipe(RejectEmptyTitle::class)),

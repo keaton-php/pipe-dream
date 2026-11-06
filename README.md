@@ -453,7 +453,7 @@ When a step goes wrong, two things decide what happens next: what the rule says 
 
 - `error()` records a failure (`PipeRule::FAIL`) with its message, and the next pipe runs. An unexpected exception in a rule (any `Throwable`, PHP errors such as `TypeError` included) is handled the same way.
 - `fatal()` records a fatal (`PipeRule::FATAL_FAIL`), and nothing after it runs: not the rest of its hub, not any later hub, and neither the hub's `then()` nor the manager's `then()`.
-- `fatalsStopThisHubOnly()` contains a hub's fatals: the rest of that hub and its `then()` are skipped, the manager moves on to the next hub, and the manager's `then()` still runs. It only matters inside a manager; a hub run on its own is the whole flow.
+- `fatalsStopThisHubOnly()` contains a hub's fatals: the rest of that hub and its `then()` do not run, the manager moves on to the next hub, and the manager's `then()` still runs. It only matters inside a manager; a hub run on its own is the whole flow.
 - `errorsAreFatal()` on a hub makes every `error()` and every unexpected exception in its pipes a fatal, and then `fatalsStopThisHubOnly()` decides how far it reaches. A rule can do the same for itself with `protected $errorsAreFatal = true;`.
 
 `RejectEmptyTitle` stops on an empty title, and `CheckTitleLength` (from *Rules*) calls `error()` on a title over twelve words. Here they are in a three-hub flow, run five ways. Each line lists the rules that ran, in order, with what they recorded; a rule the stop reached never runs, so it has no result at all:
@@ -491,7 +491,7 @@ use Keaton\PipeDream\PipeRule;
 $publish = function (string $title, ?Closure $check = null, ?Closure $edit = null) {
     $check ??= fn (PipeHub $hub) => $hub;
     $edit ??= fn (PipeHub $hub) => $hub;
-    $managerThen = 'skipped';
+    $managerThen = 'did not run';
 
     $envelope = PipeManager::create([
         $check(PipeHub::create()->name('Check')->addPipe(RejectEmptyTitle::class)),
@@ -524,11 +524,11 @@ echo "5. error() in Edit, with errorsAreFatal() and fatalsStopThisHubOnly():\n  
 1. error() in Edit:
    RejectEmptyTitle ok, TidyTitle ok, CountWords ok, CheckTitleLength error, SlugifyTitle ok. Manager then(): ran
 2. fatal() in Check:
-   RejectEmptyTitle FATAL. Manager then(): skipped
+   RejectEmptyTitle FATAL. Manager then(): did not run
 3. fatal() in Check, with fatalsStopThisHubOnly():
    RejectEmptyTitle FATAL, TidyTitle ok, CountWords ok, CheckTitleLength skip, SlugifyTitle ok. Manager then(): ran
 4. error() in Edit, with errorsAreFatal():
-   RejectEmptyTitle ok, TidyTitle ok, CountWords ok, CheckTitleLength FATAL. Manager then(): skipped
+   RejectEmptyTitle ok, TidyTitle ok, CountWords ok, CheckTitleLength FATAL. Manager then(): did not run
 5. error() in Edit, with errorsAreFatal() and fatalsStopThisHubOnly():
    RejectEmptyTitle ok, TidyTitle ok, CountWords ok, CheckTitleLength FATAL, SlugifyTitle ok. Manager then(): ran
 ```
@@ -641,7 +641,7 @@ foreach ($posts as $post) {
 3: 302 http://localhost/preview/3
 ```
 
-To get the fatal as an exception instead, call `throwFatals()` on the manager (or on a hub you run on its own). When a fatal stops the flow, `sendIt()` throws that same `PipeRuleFatal`, but only after everything that happens without it: the fatal is logged, `onFatal()` runs, `then()` is skipped and the log is persisted just as it would be without it (see *Keeping the log* below). For a fatal from `fatal()`, `$e->subject()` is the envelope. A fatal contained by `fatalsStopThisHubOnly()` is never thrown, because the flow carried on:
+To get the fatal as an exception instead, call `throwFatals()` on the manager (or on a hub you run on its own). When a fatal stops the flow, `sendIt()` throws that same `PipeRuleFatal`, but only after everything that happens without it: the fatal is logged, `onFatal()` runs, `then()` does not run and the log is persisted just as it would be without it (see *Keeping the log* below). For a fatal from `fatal()`, `$e->subject()` is the envelope. A fatal contained by `fatalsStopThisHubOnly()` is never thrown, because the flow carried on:
 
 <!-- example: docs/examples/scripts/throw-fatals.php -->
 ```php
@@ -908,8 +908,8 @@ How far a stop reaches:
 
 | On the hub | A rule calls `fatal()` | A rule calls `error()`, or throws an unexpected exception |
 |---|---|---|
-| (default) | **the whole flow stops**: the rest of this hub, every later hub, this hub's `then()` and the manager's `then()` are skipped; the hub's `onFatal()` runs, then the manager's | recorded as `FAIL`; the hub's `onError()` runs, then the manager's; the next pipe runs |
-| `->fatalsStopThisHubOnly()` | **this hub stops**: the rest of it and its `then()` are skipped and its `onFatal()` runs (not the manager's); the next hub runs, and the manager's `then()` still runs | as default |
+| (default) | **the whole flow stops**: the rest of this hub, every later hub, this hub's `then()` and the manager's `then()` do not run; the hub's `onFatal()` runs, then the manager's | recorded as `FAIL`; the hub's `onError()` runs, then the manager's; the next pipe runs |
+| `->fatalsStopThisHubOnly()` | **this hub stops**: the rest of it and its `then()` do not run, and its `onFatal()` runs (not the manager's); the next hub runs, and the manager's `then()` still runs | as default |
 | `->errorsAreFatal()` | as default | handled as a `fatal()` (recorded as `FATAL_FAIL`, sent to `onFatal()` instead of `onError()`), so **the whole flow stops** |
 | both | as `fatalsStopThisHubOnly()` | handled as a `fatal()`, so **this hub stops** |
 
@@ -917,7 +917,7 @@ How the stop reaches the caller, set on the manager (or on a hub run on its own;
 
 | | Default | `->throwFatals()` |
 |---|---|---|
-| a fatal stops the flow | `sendIt()` returns the envelope; `hasFatalErrors()` is true | `sendIt()` throws the same `PipeRuleFatal`, after it is logged, `onFatal()` runs, `then()` is skipped and the log is persisted |
+| a fatal stops the flow | `sendIt()` returns the envelope; `hasFatalErrors()` is true | `sendIt()` throws the same `PipeRuleFatal`, after it is logged, `onFatal()` runs, `then()` does not run and the log is persisted |
 | a fatal is contained to its hub | the flow carries on | the flow carries on, and nothing is thrown |
 | a redirect, view or configuration error | thrown from `sendIt()` | thrown from `sendIt()` |
 

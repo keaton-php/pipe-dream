@@ -29,7 +29,7 @@ use stdClass;
  * throwFatals(): opt-in, set on the outermost level (the manager, or a hub
  * run on its own). Only a fatal that stops the flow is thrown (never one
  * contained by fatalsStopThisHubOnly()), and only after everything that
- * happens without it: the fatal is logged, onFatal() runs, then() is skipped
+ * happens without it: the fatal is logged, onFatal() runs, then() does not run
  * and the log is persisted.
  */
 class ThrowFatalsTest extends TestCase

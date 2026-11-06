@@ -151,7 +151,7 @@ class PipeManager
      *
      * A fatal contained to its hub (fatalsStopThisHubOnly()) lets the flow
      * carry on and is never thrown. Everything else still happens first:
-     * the fatal is logged, onFatal() runs, then() is skipped and the log is
+     * the fatal is logged, onFatal() runs, then() does not run and the log is
      * persisted. The same PipeRuleFatal is thrown, so subject() is the
      * envelope (its log included) and getPrevious() is the error or
      * exception behind a fatal raised by errorsAreFatal().
