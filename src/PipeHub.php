@@ -60,6 +60,8 @@ class PipeHub
 
     protected bool $persistLogsOnFinalize = true;
 
+    protected bool $throwFatals = false;
+
     public function __construct(?Container $app = null)
     {
         $this->app = $app ?? IlluminateContainer::getInstance();
@@ -195,6 +197,26 @@ class PipeHub
     }
 
     /**
+     * For a hub run on its own with sendIt(): rethrow a fatal out of
+     * sendIt(), so a try/catch around the run catches it. Off by default:
+     * sendIt() returns the envelope and the fatal is only recorded on it.
+     *
+     * A hub run on its own is the whole flow, so any fatal in it is thrown.
+     * Everything else still happens first: the fatal is logged, then() is
+     * skipped and the log is persisted (see persistLogs()). The same
+     * PipeRuleFatal is thrown, so subject() is the envelope.
+     *
+     * Inside a PipeManager this setting is ignored: set throwFatals() on
+     * the manager instead.
+     */
+    public function throwFatals($shouldThrow = true)
+    {
+        $this->throwFatals = (bool) $shouldThrow;
+
+        return $this;
+    }
+
+    /**
      * Whether a hub run on its own persists its log when it finishes. Hubs
      * inside a PipeManager never persist; the manager persists once.
      */
@@ -243,8 +265,10 @@ class PipeHub
 
     /**
      * Run this hub on its own: the hub is the whole flow, so its log is
-     * persisted when it finishes (see persistLogs()). A fatal never escapes;
-     * read it from the envelope with hasFatalErrors().
+     * persisted when it finishes (see persistLogs()). By default a fatal
+     * does not escape; read it from the envelope with hasFatalErrors().
+     *
+     * @throws PipeRuleFatal with throwFatals(), when a fatal ended the run
      */
     public function sendIt($subject = null)
     {
@@ -255,8 +279,13 @@ class PipeHub
         }
 
         try {
-            return $this->run($subject);
+            return $this->run($subject, $this->throwFatals);
         } catch (PipeRuleFatal $e) {
+            if ($this->throwFatals) {
+                // The finally below persists the log before this leaves.
+                throw $e->withSubject($subject);
+            }
+
             return $subject;
         } catch (PipeRuleRedirect $e) {
             // Defensive: whatever threw it, the caller gets a usable URL.
@@ -293,7 +322,12 @@ class PipeHub
         return $this->subject = PipeEnvelope::wrap($subject, $this->app);
     }
 
-    protected function run(PipeEnvelope $subject): PipeEnvelope
+    /**
+     * @param  bool  $fatalEndsFlow  rethrow every fatal, not only under
+     *                               stopOnFatal() (a standalone hub that
+     *                               throws its fatals)
+     */
+    protected function run(PipeEnvelope $subject, bool $fatalEndsFlow = false): PipeEnvelope
     {
         if ($this->skipThisHub) {
             $this->logInfo('PipeHub:sendIt', 'Skipping hub', $this->getPipeHubContext());
@@ -350,7 +384,7 @@ class PipeHub
                 $this->stopOnFatal ? 'flow' : 'hub'
             ), $this->getPipeHubContext() + ['ends' => $this->stopOnFatal ? 'flow' : 'hub']);
 
-            if ($this->stopOnFatal) {
+            if ($this->stopOnFatal || $fatalEndsFlow) {
                 throw $e;
             }
         } catch (PipeRuleRedirect $e) {
@@ -585,5 +619,10 @@ class PipeHub
     public function persistsLogs(): bool
     {
         return $this->persistLogsOnFinalize;
+    }
+
+    public function throwsFatals(): bool
+    {
+        return $this->throwFatals;
     }
 }

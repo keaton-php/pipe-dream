@@ -9,6 +9,8 @@ use Throwable;
 /**
  * A rule hit something it cannot continue past. By default a fatal ends the
  * hub it happened in; with stopOnFatal() on that hub it ends the whole flow.
+ * It leaves sendIt() only with throwFatals(), and then subject() is the
+ * envelope.
  */
 class PipeRuleFatal extends Exception
 {
@@ -26,5 +28,18 @@ class PipeRuleFatal extends Exception
     public function subject()
     {
         return $this->subject;
+    }
+
+    /**
+     * Fill in the subject when the fatal was thrown without one (a
+     * PipeRuleFatal constructed by hand). A subject already set is kept.
+     *
+     * @internal
+     */
+    public function withSubject($subject)
+    {
+        $this->subject ??= $subject;
+
+        return $this;
     }
 }
