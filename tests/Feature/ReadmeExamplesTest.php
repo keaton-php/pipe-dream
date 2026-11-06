@@ -11,29 +11,30 @@ use Keaton\PipeDream\PipeEnvelope;
 use Keaton\PipeDream\PipeHub;
 use Keaton\PipeDream\PipeManager;
 use Keaton\PipeDream\PipeRule;
-use Keaton\PipeDream\Tests\Fixtures\Readme\BudgetLedger;
-use Keaton\PipeDream\Tests\Fixtures\Readme\CheckAdvertiserSuppressionList;
-use Keaton\PipeDream\Tests\Fixtures\Readme\CheckCampaignStatus;
-use Keaton\PipeDream\Tests\Fixtures\Readme\ChooseLandingPage;
-use Keaton\PipeDream\Tests\Fixtures\Readme\HandleAdClick;
-use Keaton\PipeDream\Tests\Fixtures\Readme\RecordBudgetSpend;
-use Keaton\PipeDream\Tests\Fixtures\Readme\ResolveRegion;
+use BudgetLedger;
+use CheckAdvertiserSuppressionList;
+use CheckCampaignStatus;
+use ChooseLandingPage;
+use HandleAdClick;
+use RecordBudgetSpend;
+use ResolveRegion;
 use Keaton\PipeDream\Tests\TestCase;
 
 /**
  * Every code example in README.md, run as written.
  *
- * Each example in the README is preceded by an `<!-- example: path -->`
- * marker naming its fixture under tests/Fixtures/Readme; the first tests
- * here prove the README shows exactly that fixture's code. A script's
- * `expression;   // value` lines are evaluated and compared with the value
- * the comment claims ("..." in a quoted value matches anything).
+ * Each PHP block in the README is preceded by an `<!-- example: path -->`
+ * marker naming a complete file under docs/examples, and shows that file
+ * exactly. Scripts are run as they are; classes are autoloaded (composer
+ * classmap). A script's `expression;   // value` lines are evaluated and
+ * compared with the value the comment claims ("..." in a quoted value
+ * matches anything).
  */
 class ReadmeExamplesTest extends TestCase
 {
-    private const FIXTURES = __DIR__.'/../Fixtures/Readme';
+    private const ROOT = __DIR__.'/../..';
 
-    private const CLICK = ['id' => 'clk_123', 'campaign' => 'spring-sale', 'country' => 'CA'];
+    private const FIXTURES = self::ROOT.'/docs/examples';
 
     protected function defineDatabaseMigrations()
     {
@@ -57,7 +58,12 @@ class ReadmeExamplesTest extends TestCase
         $this->assertGreaterThanOrEqual(20, count($examples));
 
         foreach ($examples as [, $fixture, $shown]) {
-            $this->assertSame($this->exampleSource($fixture), $shown, "README example {$fixture} differs from its fixture");
+            $this->assertSame($this->exampleSource($fixture), $shown, "README example {$fixture} differs from its file");
+        }
+
+        // Nothing in an example file is hidden from the reader.
+        foreach (array_merge(glob(self::FIXTURES.'/*.php'), glob(self::FIXTURES.'/scripts/*.php')) as $file) {
+            $this->assertStringNotContainsString('README:start', file_get_contents($file), $file);
         }
     }
 
@@ -122,7 +128,9 @@ class ReadmeExamplesTest extends TestCase
 
     public function test_one_hub_with_closures(): void
     {
+        ob_start();
         ['envelope' => $envelope, 'click' => $click] = $this->runScript('click-check.php');
+        ob_end_clean();
 
         $this->assertSame('North America', $envelope->get('region'));
         $this->assertSame('https://example.test/spring-sale', $click->destination);
@@ -131,13 +139,11 @@ class ReadmeExamplesTest extends TestCase
 
     public function test_the_timeline_shown_is_the_timeline_the_example_produces(): void
     {
-        ['envelope' => $envelope] = $this->runScript('click-check.php');
-
         ob_start();
-        $this->runScript('render-timeline.php', ['envelope' => $envelope]);
+        $this->runScript('click-check.php');
         $printed = ob_get_clean();
 
-        $shown = $this->fencedBlockAfter('<!-- output: scripts/click-check.php -->');
+        $shown = $this->fencedBlockAfter('<!-- output: docs/examples/scripts/click-check.php -->');
 
         // Everything but the timings, which differ on every run.
         $this->assertSame($this->withoutTimes($shown), $this->withoutTimes($printed));
@@ -148,7 +154,7 @@ class ReadmeExamplesTest extends TestCase
 
     public function test_the_same_hub_with_rule_classes(): void
     {
-        $vars = $this->runScript('rule-hub.php', ['click' => (object) self::CLICK]);
+        $vars = $this->runScript('rule-hub.php');
 
         $this->assertSame(3, $this->assertCommentedValues('rule-hub.php', $vars));
 
@@ -388,8 +394,8 @@ class ReadmeExamplesTest extends TestCase
 
     public function test_reading_a_run_back(): void
     {
-        $vars = $this->runScript('database.php');
-        $vars = $this->runScript('rebuild.php', ['envelope' => $vars['envelope']]);
+        $this->runScript('database.php');
+        $vars = $this->runScript('rebuild.php');
 
         $this->assertSame(3, $this->assertCommentedValues('rebuild.php', $vars));
     }
@@ -399,8 +405,6 @@ class ReadmeExamplesTest extends TestCase
 
     public function test_events(): void
     {
-        require_once self::FIXTURES.'/scripts/event-classes.php';
-
         $vars = $this->runScript('events.php');
 
         $this->assertSame(1, $this->assertCommentedValues('events.php', $vars));
@@ -408,14 +412,13 @@ class ReadmeExamplesTest extends TestCase
 
     public function test_a_skipped_hub_dispatches_only_the_skip_event(): void
     {
-        require_once self::FIXTURES.'/scripts/event-classes.php';
         $fired = [];
         \Illuminate\Support\Facades\Event::listen([\BotChecksStarted::class, \BotChecksSkipped::class, \RuleStarting::class], function ($event) use (&$fired) {
             $fired[] = class_basename($event);
         });
 
         PipeHub::create()
-            ->addPipe(\Keaton\PipeDream\Tests\Fixtures\Readme\DetectHostingProviderIp::class)
+            ->addPipe(\DetectHostingProviderIp::class)
             ->broadcastEventBefore(\BotChecksStarted::class)
             ->broadcastEventOnSkip(\BotChecksSkipped::class)
             ->broadcastEventBeforeEachPipe(\RuleStarting::class)
@@ -525,13 +528,17 @@ class ReadmeExamplesTest extends TestCase
         return new BudgetLedger(available: false);
     }
 
-    /** @return array<class-string> every class under tests/Fixtures/Readme */
+    /** @return array<class-string> every class declared under docs/examples */
     private function fixtureClasses(): array
     {
-        return array_map(
-            fn ($file) => 'Keaton\\PipeDream\\Tests\\Fixtures\\Readme\\'.basename($file, '.php'),
-            glob(self::FIXTURES.'/*.php')
-        );
+        $classes = [];
+
+        foreach (glob(self::FIXTURES.'/*.php') as $file) {
+            preg_match_all('/^class (\w+)/m', file_get_contents($file), $found);
+            array_push($classes, ...$found[1]);
+        }
+
+        return $classes;
     }
 
     private function readme(): string
@@ -550,18 +557,10 @@ class ReadmeExamplesTest extends TestCase
         return substr($body, 0, strpos($body, "\n```"));
     }
 
-    /** The part of a fixture the README shows. */
-    private function exampleSource(string $fixture): string
+    /** An example file, as the README shows it: all of it. */
+    private function exampleSource(string $path): string
     {
-        $source = file_get_contents(self::FIXTURES.'/'.$fixture);
-
-        if (str_contains($source, "// README:start\n")) {
-            $source = explode('// README:end', explode("// README:start\n", $source, 2)[1], 2)[0];
-        } elseif (preg_match('/^<\?php\n\nnamespace [^;]+;\n\n/', $source, $header)) {
-            $source = substr($source, strlen($header[0]));
-        }
-
-        return rtrim($source, "\n");
+        return rtrim(file_get_contents(self::ROOT.'/'.$path), "\n");
     }
 
     /** Run a README script in this test's scope; returns its variables, plus `__result`. */
@@ -591,13 +590,13 @@ class ReadmeExamplesTest extends TestCase
      */
     private function assertCommentedValues(string $script, array $vars): int
     {
-        $source = file_get_contents(self::FIXTURES.'/scripts/'.$script);
-        preg_match_all('/^use [^;]+;$/m', explode('// README:start', $source)[0], $uses);
+        $source = $this->exampleSource('docs/examples/scripts/'.$script);
+        preg_match_all('/^use [^;]+;$/m', $source, $uses);
         $imports = implode("\n", $uses[0])."\n";
         $checked = 0;
 
-        foreach (explode("\n", $this->exampleSource('scripts/'.$script)) as $line) {
-            if (! preg_match('/^(\S.*?);\s+\/\/ (.+)$/', $line, $parts) || preg_match('/(?<![=!<>])=(?![=>])/', $parts[1])) {
+        foreach (explode("\n", $source) as $line) {
+            if (str_starts_with($line, 'use ') || ! preg_match('/^(\S.*?);\s+\/\/ (.+)$/', $line, $parts) || preg_match('/(?<![=!<>])=(?![=>])/', $parts[1])) {
                 continue;
             }
 

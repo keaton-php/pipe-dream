@@ -30,7 +30,10 @@
     "autoload-dev": {
         "psr-4": {
             "Keaton\\PipeDream\\Tests\\": "tests/"
-        }
+        },
+        "classmap": [
+            "docs/examples/"
+        ]
     },
     "scripts": {
         "test": "phpunit"
