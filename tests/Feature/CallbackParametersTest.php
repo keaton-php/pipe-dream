@@ -140,4 +140,35 @@ class CallbackParametersTest extends TestCase
         $this->assertSame(['value' => $both], $binder->bind($accepts, ['subject' => $both]));
         $this->assertSame(['subject' => $one], $binder->bind($accepts, ['subject' => $one]));
     }
+
+    public function test_names_win_and_a_value_no_name_took_still_goes_by_position(): void
+    {
+        $this->app->instance(Journal::class, $journal = new Journal());
+        $seen = [];
+
+        PipeHub::create()
+            ->addPipes([ErrorRule::class, ExplodingRule::class, FatalRule::class])
+            // One parameter named $exception: the exception, by name.
+            ->onError(function ($exception) use (&$seen) {
+                $seen['one $exception'][] = get_class($exception);
+            })
+            // Names reversed: each still gets its own value.
+            ->onFatal(function ($exception, $subject) use (&$seen) {
+                $seen['reversed'] = [get_class($exception), get_class($subject)];
+            })
+            ->sendIt(new stdClass());
+
+        // A $exception typed as a service is resolved by the container, and
+        // the real exception still reaches the second parameter by position.
+        PipeHub::create()
+            ->addPipe(ErrorRule::class)
+            ->onError(function (Journal $exception, \Throwable $error) use (&$seen) {
+                $seen['service then error'] = [$exception, get_class($error)];
+            })
+            ->sendIt(new stdClass());
+
+        $this->assertSame([PipeRuleError::class, \RuntimeException::class], $seen['one $exception']);
+        $this->assertSame([\Keaton\PipeDream\Exceptions\PipeRuleFatal::class, PipeEnvelope::class], $seen['reversed']);
+        $this->assertSame([$journal, PipeRuleError::class], $seen['service then error']);
+    }
 }
