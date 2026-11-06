@@ -2,23 +2,23 @@
 
 namespace Keaton\PipeDream\Tests\Feature;
 
+use CheckTitleLength;
+use CountWords;
+use HandleAdClick;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
+use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
 use Keaton\PipeDream\Models\PipeDreamLog;
-use Keaton\PipeDream\PipeEnvelope;
 use Keaton\PipeDream\PipeHub;
 use Keaton\PipeDream\PipeManager;
 use Keaton\PipeDream\PipeRule;
-use BudgetLedger;
-use CheckAdvertiserSuppressionList;
-use CheckCampaignStatus;
-use ChooseLandingPage;
-use HandleAdClick;
-use RecordBudgetSpend;
-use ResolveRegion;
 use Keaton\PipeDream\Tests\TestCase;
+use RecordBudgetSpend;
+use RejectEmptyTitle;
+use SlugifyTitle;
+use TidyTitle;
 
 /**
  * Every code example in README.md, run as written.
@@ -97,7 +97,7 @@ class ReadmeExamplesTest extends TestCase
 
             $body = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
 
-            if (! str_contains($body, '$this->runScript(') && ! str_contains($body, '$this->handle(')) {
+            if (! str_contains($body, '$this->runScript(') && ! str_contains($body, '$this->handle(') && ! str_contains($body, '$this->assertExampleOutput(')) {
                 continue;
             }
 
@@ -108,7 +108,7 @@ class ReadmeExamplesTest extends TestCase
             }
         }
 
-        $this->assertGreaterThanOrEqual(20, $checked);
+        $this->assertGreaterThanOrEqual(18, $checked);
     }
 
     public function test_readme_fixtures_carry_no_state_between_tests(): void
@@ -124,272 +124,191 @@ class ReadmeExamplesTest extends TestCase
     }
 
     // ------------------------------------------------------------------
-    // 2. One hub, with closures
+    // Outputs: every output block shown is what its example prints
 
-    public function test_one_hub_with_closures(): void
+    public function test_every_output_shown_is_what_its_example_prints(): void
+    {
+        preg_match_all('/<!-- output: docs\/examples\/scripts\/(\S+) -->/', $this->readme(), $outputs);
+
+        $this->assertGreaterThanOrEqual(9, count($outputs[1]));
+
+        foreach ($outputs[1] as $script) {
+            $this->assertExampleOutput($script);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // What a pipeline is / the same thing as a PipeHub
+
+    public function test_the_laravel_pipeline_and_the_hub_tidy_the_title_the_same_way(): void
     {
         ob_start();
-        ['envelope' => $envelope, 'click' => $click] = $this->runScript('click-check.php');
+        ['post' => $viaPipeline] = $this->runScript('pipeline.php');
+        ['post' => $viaHub] = $this->runScript('hub.php');
         ob_end_clean();
 
-        $this->assertSame('North America', $envelope->get('region'));
-        $this->assertSame('https://example.test/spring-sale', $click->destination);
-        $this->assertCount(2, $envelope->results()->successes());
-    }
-
-    public function test_the_timeline_shown_is_the_timeline_the_example_produces(): void
-    {
-        ob_start();
-        $this->runScript('click-check.php');
-        $printed = ob_get_clean();
-
-        $shown = $this->fencedBlockAfter('<!-- output: docs/examples/scripts/click-check.php -->');
-
-        // Everything but the timings, which differ on every run.
-        $this->assertSame($this->withoutTimes($shown), $this->withoutTimes($printed));
+        $this->assertSame('Hello, Pipe Dream', $viaPipeline->title);
+        $this->assertSame($viaPipeline->title, $viaHub->title);
     }
 
     // ------------------------------------------------------------------
-    // 3. The same hub, with PipeRule classes
+    // Why that's better
 
-    public function test_the_same_hub_with_rule_classes(): void
+    public function test_the_envelope_reads_through_to_the_subject(): void
     {
-        $vars = $this->runScript('rule-hub.php');
-
-        $this->assertSame(3, $this->assertCommentedValues('rule-hub.php', $vars));
-
-        $envelope = $vars['envelope'];
-        $this->assertSame('Visitor is in North America', $envelope->logger()->infos()->firstWhere('key', ResolveRegion::class)['data']);
-        $this->assertSame(PipeRule::SUCCESS, $envelope->get(ChooseLandingPage::class));
-        $this->assertSame('Resolve the region', ResolveRegion::$name);
+        $this->assertExampleOutput('envelope.php');
     }
 
-    public function test_the_run_method_is_the_one_named_after_the_class(): void
+    public function test_pipes_share_values_on_the_envelope(): void
     {
-        $this->assertSame(['resolveRegion'], (new ResolveRegion())->getExtendedClassMethods());
+        $vars = $this->assertExampleOutput('state.php');
+
+        $this->assertSame('in review', $vars['envelope']->get('state'));
     }
 
-    // ------------------------------------------------------------------
-    // 4. What a rule can return
-
-    public function test_what_a_rule_can_return(): void
+    public function test_every_step_is_logged_with_its_return_value(): void
     {
-        $run = fn (string $campaign) => PipeHub::create()
-            ->addPipes([CheckCampaignStatus::class, ChooseLandingPage::class])
-            ->sendIt((object) ['id' => 'clk', 'campaign' => $campaign, 'destination' => null]);
+        $vars = $this->assertExampleOutput('log.php');
 
-        $live = $run('spring-sale');
-        $this->assertSame(PipeRule::SUCCESS, $live->get(CheckCampaignStatus::class));
-        $this->assertSame('https://example.test/spring-sale', $live->destination);
-
-        $paused = $run('winter-sale');
-        $this->assertSame(PipeRule::FAIL, $paused->get(CheckCampaignStatus::class));
-        $this->assertStringStartsWith('Campaign winter-sale is paused', $paused->logger()->errors()->first()['data']);
-        $this->assertSame('https://example.test/winter-sale', $paused->destination, 'after an error the next pipe runs');
-
-        $test = $run('demo');
-        $this->assertSame(PipeRule::SKIP, $test->get(CheckCampaignStatus::class));
-        $this->assertSame('Test campaign, nothing to check', $test->logger()->infos()->firstWhere('key', CheckCampaignStatus::class)['data']);
-        $this->assertNotNull($test->destination);
-
-        $unknown = $run('nope');
-        $this->assertSame(PipeRule::FATAL_FAIL, $unknown->get(CheckCampaignStatus::class));
-        $this->assertNull($unknown->destination, 'a fatal skips the rest of the hub');
-
-        // The fatal record points at the line in the rule that called fatal().
-        $fatal = $unknown->logger()->fatals()->first();
-        $this->assertStringEndsWith('CheckCampaignStatus.php', $fatal['context']['file']);
-        $this->assertStringContainsString('$this->fatal(', file($fatal['context']['file'])[$fatal['context']['line'] - 1]);
-    }
-
-    public function test_the_return_values_are_the_numbers_the_table_shows(): void
-    {
-        $this->assertSame([1, 2, 3, 4], [PipeRule::SUCCESS, PipeRule::FAIL, PipeRule::FATAL_FAIL, PipeRule::SKIP]);
+        $this->assertSame(
+            ['hello,   PIPE dream', 'hello, PIPE dream', 'Hello, Pipe Dream'],
+            $vars['envelope']->results()->map->result()->values()->all()
+        );
     }
 
     // ------------------------------------------------------------------
-    // 5. Stages in order: PipeManager
+    // Stack hubs into a PipeManager
 
-    public function test_stages_in_order(): void
+    public function test_stacked_hubs_make_one_run_and_one_log(): void
     {
-        $vars = $this->runScript('manager.php');
+        $vars = $this->assertExampleOutput('stack.php');
 
-        $this->assertSame(3, $this->assertCommentedValues('manager.php', $vars));
-
-        $envelope = $vars['envelope'];
-        $logs = $envelope->logs();
+        $logs = $vars['envelope']->logs();
         $this->assertSame('PipeManager:sendIt', $logs[0]['key']);
         $this->assertSame('PipeManager:sendIt', end($logs)['key']);
-        $this->assertSame(['Validate', 'Route'], $envelope->logger()->infos()
-            ->where('data', 'Sending subject through all pipes')->pluck('context.name')->values()->all());
-        $this->assertSame('Is this a click we can buy?', $logs[1]['context']['description']);
-        $this->assertMatchesRegularExpression('/^[0-9a-f-]{36}$/', $envelope->runId());
     }
 
     // ------------------------------------------------------------------
-    // 6. Adding behaviour
+    // Rules
 
-    public function test_skip_if(): void
+    public function test_rules_with_injection_shared_values_and_logging(): void
     {
-        $vars = $this->runScript('skip-if.php');
+        $vars = $this->assertExampleOutput('rules.php');
 
-        $this->assertSame(2, $this->assertCommentedValues('skip-if.php', $vars));
-        $this->assertSame(
-            "Skipped: the hub's skipIf() returned true",
-            $vars['envelope']->logger()->infos()->firstWhere('key', CheckAdvertiserSuppressionList::class)['data']
-        );
-
-        // Without the skip, the same click is stopped by the suppression list.
-        $this->assertTrue(PipeHub::create()->addPipe(CheckAdvertiserSuppressionList::class)->sendIt($vars['click'])->hasFatalErrors());
+        $envelope = $vars['envelope'];
+        $this->assertSame('Title is now "Hello, Pipe Dream"', $envelope->logger()->infos()->firstWhere('key', TidyTitle::class)['data']);
+        $this->assertSame(3, $envelope->get('words'));
+        $this->assertSame(['tidyTitle'], (new TidyTitle())->getExtendedClassMethods());
     }
 
-    public function test_then(): void
+    public function test_the_result_helpers_read_and_write_the_same_value_as_the_magic_property(): void
     {
-        $vars = $this->runScript('then.php');
+        $envelope = PipeHub::create()
+            ->addPipes([
+                CountWords::class,
+                fn ($post) => $post->set('words_seen', $post->get('words')),
+            ])
+            ->sendIt((object) ['title' => 'Hello Pipe Dream']);
 
-        $this->assertSame(2, $this->assertCommentedValues('then.php', $vars));
+        $this->assertSame(3, $envelope->get('words_seen'));
+        $this->assertSame(3, $envelope->get('words'));
     }
 
-    public function test_a_manager_has_a_then_too(): void
+    public function test_a_one_word_title_skips_the_length_check(): void
     {
-        $ran = false;
-        PipeManager::create([PipeHub::create()])->subject((object) [])->then(function () use (&$ran) {
-            $ran = true;
-        })->sendIt();
+        $envelope = PipeHub::create()
+            ->addPipes([CountWords::class, CheckTitleLength::class])
+            ->sendIt((object) ['title' => 'Hello']);
 
-        $this->assertTrue($ran);
+        $this->assertSame(PipeRule::SKIP, $envelope->get(CheckTitleLength::class));
+        $this->assertSame('A one-word title is fine', $envelope->logger()->infos()->firstWhere('key', CheckTitleLength::class)['data']);
     }
 
-    public function test_stop_on_fatal(): void
+    public function test_a_long_title_is_an_error_and_the_hub_carries_on(): void
     {
-        $vars = $this->runScript('stop-on-fatal.php');
+        $envelope = PipeHub::create()
+            ->addPipes([CountWords::class, CheckTitleLength::class, SlugifyTitle::class])
+            ->sendIt($post = (object) ['title' => 'one two three four five six seven eight nine ten eleven twelve thirteen']);
 
-        $this->assertSame(2, $this->assertCommentedValues('stop-on-fatal.php', $vars));
+        $this->assertSame(PipeRule::FAIL, $envelope->get(CheckTitleLength::class));
+        $this->assertStringStartsWith('The title has 13 words', $envelope->logger()->errors()->first()['data']);
+        $this->assertNotNull($post->slug ?? null);
     }
 
-    public function test_without_stop_on_fatal_the_route_hub_still_runs(): void
-    {
-        $click = (object) ['id' => 'clk_127', 'campaign' => 'no-such-campaign', 'destination' => null];
-        $managerThen = false;
+    // ------------------------------------------------------------------
+    // All together
 
+    public function test_all_together(): void
+    {
+        $vars = $this->assertExampleOutput('together.php');
+
+        $this->assertSame('Publish a post', $vars['envelope']->flowName());
+    }
+
+    public function test_a_draft_skips_the_publish_hub_and_stays_a_draft(): void
+    {
+        $source = file_get_contents(self::FIXTURES.'/scripts/together.php');
+        $this->assertStringContainsString("'status' => 'ready'", $source);
+
+        // The README's variation: the same file with 'status' => 'draft'.
+        $draft = sys_get_temp_dir().'/pipe-dream-together-draft.php';
+        file_put_contents($draft, str_replace("'status' => 'ready'", "'status' => 'draft'", $source));
+
+        ob_start();
+        $vars = (function () use ($draft) {
+            require $draft;
+
+            return get_defined_vars();
+        })->call($this);
+        ob_end_clean();
+        unlink($draft);
+
+        $this->assertSame('draft', $vars['post']->status);
+        $this->assertSame(PipeRule::SKIP, $vars['envelope']->get(SlugifyTitle::class));
+    }
+
+    // ------------------------------------------------------------------
+    // Controlling the flow
+
+    public function test_the_controller_handles_success_fatal_and_redirect(): void
+    {
+        $this->assertExampleOutput('controller.php');
+    }
+
+    public function test_a_fatal_never_leaves_send_it_as_an_exception(): void
+    {
         $envelope = PipeManager::create([
-            PipeHub::create()->name('Validate')->addPipes([CheckCampaignStatus::class]),
-            PipeHub::create()->name('Route')->addPipes([ChooseLandingPage::class]),
-        ])->subject($click)->then(function () use (&$managerThen) {
-            $managerThen = true;
-        })->sendIt();
+            PipeHub::create()->addPipe(RejectEmptyTitle::class)->stopOnFatal(),
+        ])->subject((object) ['title' => ''])->sendIt();
 
         $this->assertTrue($envelope->hasFatalErrors());
-        $this->assertSame('https://example.test/no-such-campaign', $click->destination);
-        $this->assertTrue($managerThen);
+        $this->assertSame(PipeRule::FATAL_FAIL, $envelope->get(RejectEmptyTitle::class));
     }
 
-    public function test_with_stop_on_fatal_the_manager_then_does_not_run(): void
+    public function test_a_view_hand_off_leaves_send_it(): void
     {
-        $managerThen = false;
+        $this->expectException(PipeRuleLoadView::class);
 
-        $envelope = PipeManager::create([
-            PipeHub::create()->addPipes([CheckCampaignStatus::class])->stopOnFatal(),
-        ])->subject((object) ['campaign' => 'no-such-campaign'])->then(function () use (&$managerThen) {
-            $managerThen = true;
-        })->sendIt();
-
-        $this->assertInstanceOf(PipeEnvelope::class, $envelope);
-        $this->assertFalse($managerThen);
-    }
-
-    public function test_on_failure_and_failure_is_fatal(): void
-    {
-        $vars = $this->runScript('on-failure.php');
-
-        $this->assertSame(3, $this->assertCommentedValues('on-failure.php', $vars));
-        $this->assertSame(PipeRule::FAIL, $vars['envelope']->get(RecordBudgetSpend::class));
-    }
-
-    public function test_without_failure_is_fatal_a_failure_ends_only_its_hub(): void
-    {
-        $this->app->instance(BudgetLedger::class, $this->downLedger());
-        $click = (object) ['id' => 'clk_128', 'campaign' => 'spring-sale', 'needsReview' => false, 'destination' => null];
-        $seen = null;
-
-        PipeManager::create([
-            PipeHub::create()
-                ->addPipes([RecordBudgetSpend::class])
-                ->onFailure(function ($click, $exception) use (&$seen) {
-                    $click->needsReview = true;
-                    $seen = $exception->getMessage();
-                }),
-            PipeHub::create()->addPipes([ChooseLandingPage::class]),
-        ])->subject($click)->sendIt();
-
-        $this->assertTrue($click->needsReview);
-        $this->assertSame('Budget service unavailable', $seen);
-        $this->assertSame('https://example.test/spring-sale', $click->destination);
-    }
-
-    public function test_the_budget_rule_succeeds_when_the_service_is_up(): void
-    {
-        $envelope = PipeHub::create()->addPipe(RecordBudgetSpend::class)->sendIt((object) ['campaign' => 'spring-sale']);
-
-        $this->assertSame(PipeRule::SUCCESS, $envelope->get(RecordBudgetSpend::class));
-        $this->assertSame('Charged spring-sale 0.40', $envelope->logger()->infos()->firstWhere('key', RecordBudgetSpend::class)['data']);
-    }
-
-    public function test_stop_on_error(): void
-    {
-        $vars = $this->runScript('stop-on-error.php');
-
-        $this->assertSame(2, $this->assertCommentedValues('stop-on-error.php', $vars));
-    }
-
-    public function test_load_view(): void
-    {
-        ['__result' => $view] = $this->runScript('load-view.php');
-
-        $this->assertInstanceOf(View::class, $view);
-        $this->assertSame('challenge', $view->name());
-        $this->assertSame(['click' => 'clk_130'], $view->getData());
+        PipeHub::create()
+            ->addPipe(fn () => PipeRuleLoadView::load('challenge', ['click' => 'clk_1']))
+            ->sendIt((object) []);
     }
 
     // ------------------------------------------------------------------
-    // 7. The log
-
-    public function test_reading_the_log(): void
-    {
-        $vars = $this->runScript('log-reading.php');
-
-        $this->assertSame(5, $this->assertCommentedValues('log-reading.php', $vars));
-    }
-
-    public function test_log_levels(): void
-    {
-        $vars = $this->runScript('log-level.php');
-
-        $this->assertSame(2, $this->assertCommentedValues('log-level.php', $vars));
-        $this->assertSame(['fatal', 'warning'], array_column($vars['envelope']->logs(), 'type'));
-    }
+    // Keeping the log
 
     public function test_keeping_the_log_in_the_database(): void
     {
         $vars = $this->runScript('database.php');
 
         $this->assertSame(1, $this->assertCommentedValues('database.php', $vars));
-        $this->assertSame(1, PipeDreamLog::count());
 
         $row = PipeDreamLog::first();
         $this->assertSame($vars['envelope']->runId(), $row->run_id);
         $this->assertEquals($vars['envelope']->logs(), json_decode($row->log, true));
-    }
 
-    public function test_binding_the_strategy_for_every_flow(): void
-    {
-        $this->runScript('bind-strategy.php');
-
-        $this->assertTrue($this->app->bound(PipeLoggerPersistStrategy::class));
-
-        PipeHub::create()->name('Any flow')->addPipe(ChooseLandingPage::class)->sendIt((object) ['campaign' => 'spring-sale']);
-
-        $this->assertSame('Any flow', PipeDreamLog::first()->flow);
+        $vars['envelope']->persist();
+        $this->assertSame(1, PipeDreamLog::count(), 'saving the same run again updates its row');
     }
 
     public function test_reading_a_run_back(): void
@@ -397,7 +316,7 @@ class ReadmeExamplesTest extends TestCase
         $this->runScript('database.php');
         $vars = $this->runScript('rebuild.php');
 
-        $this->assertSame(3, $this->assertCommentedValues('rebuild.php', $vars));
+        $this->assertSame(2, $this->assertCommentedValues('rebuild.php', $vars));
     }
 
     // ------------------------------------------------------------------
@@ -523,11 +442,6 @@ class ReadmeExamplesTest extends TestCase
     // ------------------------------------------------------------------
     // helpers
 
-    private function downLedger(): BudgetLedger
-    {
-        return new BudgetLedger(available: false);
-    }
-
     /** @return array<class-string> every class declared under docs/examples */
     private function fixtureClasses(): array
     {
@@ -645,6 +559,20 @@ class ReadmeExamplesTest extends TestCase
         }
 
         return false;
+    }
+
+    /** Run an example and assert it prints exactly the output the README shows after it. Returns its variables. */
+    private function assertExampleOutput(string $script): array
+    {
+        ob_start();
+        $vars = $this->runScript($script);
+        $printed = ob_get_clean();
+
+        $shown = $this->fencedBlockAfter("<!-- output: docs/examples/scripts/{$script} -->");
+
+        $this->assertSame($this->withoutTimes($shown), $this->withoutTimes($printed), "Output of {$script}");
+
+        return $vars;
     }
 
     private function withoutTimes(string $timeline): string
