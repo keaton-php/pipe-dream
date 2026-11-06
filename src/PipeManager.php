@@ -309,6 +309,8 @@ class PipeManager
             $subject->logger()->info('PipeManager:sendIt', 'Flow handed off: '.$e->getMessage());
 
             throw $e;
+        } catch (PipeHubException $configurationError) {
+            throw $configurationError;
         } catch (Throwable $hookFailure) {
             $subject->logger()->fatal('PipeManager:onFatal', 'onFatal() failed: '.$hookFailure->getMessage(), ['exception' => get_class($hookFailure)] + $this->getPipeManagerContext());
         }

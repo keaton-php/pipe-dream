@@ -203,6 +203,39 @@ class CallbackFailuresTest extends TestCase
         $this->assertSame(1, $this->persist->calls);
     }
 
+    public function test_an_on_error_hook_can_escalate_an_error_to_a_recorded_fatal(): void
+    {
+        $envelope = $this->manager(
+            PipeHub::create()
+                ->addPipes([ExplodingRule::class, fn () => Journal::record('middle.p2')])
+                ->onError(fn ($s, $e) => throw new PipeRuleFatal('escalated: '.$e->getMessage()))
+        )->sendIt();
+
+        $this->assertSame(['first.p1', 'ExplodingRule', 'manager onFatal: escalated: Boom'], Journal::$entries);
+        $this->assertTrue($envelope->hasFatalErrors());
+    }
+
+    public function test_a_configuration_error_from_any_hook_or_then_is_never_recorded_as_an_error_or_fatal(): void
+    {
+        $misconfigured = fn () => PipeHub::create()->addPipe('NoSuchRule');
+        $cases = [
+            'hub then()' => fn () => PipeHub::create()->then($misconfigured)->sendIt(new stdClass()),
+            'hub onError()' => fn () => PipeHub::create()->addPipe(ExplodingRule::class)->onError($misconfigured)->sendIt(new stdClass()),
+            'hub onFatal()' => fn () => PipeHub::create()->addPipe(FatalRule::class)->onFatal($misconfigured)->sendIt(new stdClass()),
+            'manager then()' => fn () => PipeManager::create([PipeHub::create()])->subject(new stdClass())->then($misconfigured)->sendIt(),
+            'manager onFatal()' => fn () => PipeManager::create([PipeHub::create()->addPipe(FatalRule::class)])->subject(new stdClass())->onFatal($misconfigured)->sendIt(),
+        ];
+
+        foreach ($cases as $where => $run) {
+            try {
+                $run();
+                $this->fail("A PipeHubException from {$where} should leave sendIt()");
+            } catch (\Keaton\PipeDream\Exceptions\PipeHubException $e) {
+                $this->assertStringContainsString('NoSuchRule', $e->getMessage(), $where);
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // The subject of a thrown fatal
 
