@@ -27,35 +27,53 @@ trait PassesSubjectToCallbacks
             return $parameters;
         }
 
-        $positions = ['subject'];
-
-        if (array_key_exists('exception', $parameters)) {
-            $positions[] = 'exception';
-        }
-
+        $canonical = array_values(array_filter(['subject', 'exception'], fn ($key) => array_key_exists($key, $parameters)));
         $declared = $reflection->getParameters();
 
-        foreach ($positions as $index => $key) {
+        // A parameter already named `$subject` / `$exception` gets the value
+        // by name, but only if its declared type accepts it; otherwise the
+        // value is withdrawn so the container resolves it (or uses its default).
+        foreach ($declared as $parameter) {
+            $name = $parameter->getName();
+
+            if (in_array($name, $canonical, true) && ! $this->fits($name, $parameter, $parameters[$name])) {
+                unset($parameters[$name]);
+            }
+        }
+
+        // Otherwise the subject goes to the first parameter and the exception
+        // to the second, whatever they are called, when the type accepts it.
+        foreach ($canonical as $index => $key) {
             $parameter = $declared[$index] ?? null;
 
-            if (! $parameter || $parameter->isVariadic() || array_key_exists($parameter->getName(), $parameters)) {
+            if (! $parameter || $parameter->isVariadic() || ! array_key_exists($key, $parameters)) {
                 continue;
             }
 
-            $value = $parameters[$key];
+            $name = $parameter->getName();
 
-            // A hook's second parameter typed as some exception class always
-            // gets the real exception, so PHP reports a mismatch instead of
-            // the container quietly building a fresh, unrelated exception.
-            $isExceptionSlot = $key === 'exception' && $this->namesAThrowable($parameter->getType());
+            if ($name === $key || array_key_exists($name, $parameters)) {
+                continue;
+            }
 
-            if ($isExceptionSlot || $this->typeAccepts($parameter->getType(), $value)) {
-                $parameters[$parameter->getName()] = $value;
+            if ($this->fits($key, $parameter, $parameters[$key])) {
+                $parameters[$name] = $parameters[$key];
                 unset($parameters[$key]);
             }
         }
 
         return $parameters;
+    }
+
+    /**
+     * A hook's exception parameter typed as some exception class always gets
+     * the real exception, so PHP reports a mismatch instead of the container
+     * quietly building a fresh, unrelated exception.
+     */
+    private function fits(string $key, \ReflectionParameter $parameter, $value): bool
+    {
+        return ($key === 'exception' && $this->namesAThrowable($parameter->getType()))
+            || $this->typeAccepts($parameter->getType(), $value);
     }
 
     private function typeAccepts(?\ReflectionType $type, $value): bool
