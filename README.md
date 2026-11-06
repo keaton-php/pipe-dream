@@ -565,7 +565,7 @@ foreach ($posts as $post) {
 3: 302 http://localhost/preview/3
 ```
 
-To catch a fatal instead, call `throwFatals()` on the manager. When a fatal ends the flow, `sendIt()` throws that same `PipeRuleFatal`, after everything that happens without it: the fatal is logged, the manager's `then()` is skipped and the log is persisted as usual. For a fatal from `fatal()`, `$e->subject()` is the envelope. Only a fatal that ends the flow is thrown, so a hub needs `stopOnFatal()` for its fatals to reach your `catch`. A fatal that ends only its own hub lets the flow carry on, and `sendIt()` returns:
+To catch a fatal instead, call `throwFatals()` on the manager. When a fatal ends the flow, `sendIt()` throws that same `PipeRuleFatal`, after everything that happens without it: the fatal is logged, the manager's `then()` is skipped and the log is persisted just as it would be without it (see *Keeping the log* below). For a fatal from `fatal()`, `$e->subject()` is the envelope. Only a fatal that ends the flow is thrown, so a hub needs `stopOnFatal()` for its fatals to reach your `catch`. A fatal that ends only its own hub lets the flow carry on, and `sendIt()` returns:
 
 <!-- example: docs/examples/scripts/throw-fatals.php -->
 ```php
@@ -815,7 +815,7 @@ A closure pipe's result is whatever it returns (nothing, or the subject itself, 
 
 ### Stopping, in one table
 
-| On the hub | A rule calls `fatal()` | A rule calls `error()` | An exception escapes a rule |
+| On the hub (or manager) | A rule calls `fatal()` | A rule calls `error()` | An exception escapes a rule |
 |---|---|---|---|
 | (default) | the hub ends: its remaining rules and `then()` are skipped, the next hub runs | logged as `FAIL`, the hub carries on | the hub ends as a failure, `onFailure()` runs, the next hub runs |
 | `->stopOnFatal()` | **the whole flow ends**: no later hub, and the manager's `then()` does not run | as default | as default |
@@ -824,7 +824,7 @@ A closure pipe's result is whatever it returns (nothing, or the subject itself, 
 | `->throwFatals()` on the manager | as without it; when the fatal ended the whole flow (`stopOnFatal()`), `sendIt()` then **throws it** | as without it | as without it; when `failureIsFatal()` ended the whole flow, `sendIt()` then **throws its fatal** |
 | `->throwFatals()` on a hub run on its own | the hub ends as without it, then `sendIt()` **throws the fatal** (`stopOnFatal()` or not) | as without it | as without it; with `failureIsFatal()`, `sendIt()` then **throws its fatal** |
 
-"Exception" means any `Throwable`, PHP errors such as `TypeError` included. For unexpected exceptions, only `withoutErrorHandling()` (called inside the rule) or `protected $rethrowErrors = true` on the rule lets one escape it; otherwise it is logged as a `FAIL` and the hub carries on. Fatals, errors under `stopOnError()`, redirects, views and configuration errors leave a rule by design. `onFailure(fn ($subject, $exception) => …)` receives the exception as `$exception`. By default a fatal never leaves `sendIt()`: it is recorded on the envelope (`hasFatalErrors()`), and `sendIt()` returns the envelope as usual. With `throwFatals()`, the fatal that ended the flow is thrown from `sendIt()` once it is logged, `then()` is skipped and the log is persisted as usual. It is the same `PipeRuleFatal` instance, so `getPrevious()` is the failure behind a `failureIsFatal()` fatal, and `subject()` is the envelope (a `PipeRuleFatal` you construct yourself with a subject of its own keeps that subject). A hub's `throwFatals()` applies only when the hub runs on its own. A manager's `then()` runs after its last hub, unless the flow ended early.
+"Exception" means any `Throwable`, PHP errors such as `TypeError` included. For unexpected exceptions, only `withoutErrorHandling()` (called inside the rule) or `protected $rethrowErrors = true` on the rule lets one escape it; otherwise it is logged as a `FAIL` and the hub carries on. Fatals, errors under `stopOnError()`, redirects, views and configuration errors leave a rule by design. `onFailure(fn ($subject, $exception) => …)` receives the exception as `$exception`. `throwFatals()` combines with the hub rows above: it changes nothing about how a hub or flow stops, only whether `sendIt()` then throws. By default a fatal raised in a hub never leaves `sendIt()`: it is recorded on the envelope (`hasFatalErrors()`), and `sendIt()` returns the envelope as usual. (A `PipeRuleFatal` you throw from the manager's own `then()` is not caught; it leaves `sendIt()` like any other exception from that callback.) With `throwFatals()`, the fatal that ended the flow is thrown from `sendIt()` once it is logged, `then()` is skipped and the log is persisted under the same settings as without it. It is the same `PipeRuleFatal` instance, so `getPrevious()` is the failure behind a `failureIsFatal()` fatal, and `subject()` is the envelope (a `PipeRuleFatal` you construct yourself with a subject of its own keeps that subject). A hub's `throwFatals()` applies only when the hub runs on its own. A manager's `then()` runs after its last hub, unless the flow ended early.
 
 ### Skipping, in one table
 

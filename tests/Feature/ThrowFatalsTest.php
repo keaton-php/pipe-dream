@@ -243,6 +243,17 @@ class ThrowFatalsTest extends TestCase
         $this->assertTrue($envelope->hasFatalErrors());
     }
 
+    public function test_a_fatal_thrown_from_the_managers_then_leaves_send_it_even_by_default(): void
+    {
+        // Not a fatal raised in a hub: it escapes like any exception from then(), after persisting.
+        $this->catchFatal(fn () => PipeManager::create([PipeHub::create()->addPipe(FirstRule::class)])
+            ->subject(new stdClass())
+            ->then(fn () => throw new PipeRuleFatal('From then()'))
+            ->sendIt());
+
+        $this->assertSame(['FirstRule', 'caught after 1 persist'], Journal::$entries);
+    }
+
     // ------------------------------------------------------------------
     // A hub run on its own
 
