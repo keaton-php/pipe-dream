@@ -4,10 +4,17 @@ namespace Keaton\PipeDream\Tests\Fixtures\Readme;
 
 use Illuminate\Http\Request;
 
-/** The subject of the full example: one ad click, as the request described it. */
+/**
+ * The subject of the full example: one ad click, as the request described
+ * it. It has the same fields as the plain clicks in the earlier examples.
+ */
 class IncomingClick
 {
     public array $params;
+
+    public ?string $id;
+
+    public ?string $campaign;
 
     public string $ip;
 
@@ -30,6 +37,8 @@ class IncomingClick
     public function __construct(Request $request)
     {
         $this->params = $request->query();
+        $this->id = $request->query('click_id');
+        $this->campaign = $request->query('campaign');
         $this->ip = (string) $request->ip();
         $this->userAgent = (string) $request->userAgent();
         $this->email = $request->query('email');
@@ -41,9 +50,9 @@ class IncomingClick
         return $this->params[$key] ?? null;
     }
 
-    public function campaign(): ?Campaign
+    public function campaignSettings(): ?Campaign
     {
-        return Campaign::find($this->param('campaign'));
+        return Campaign::find($this->campaign);
     }
 
     public function isListed(): bool

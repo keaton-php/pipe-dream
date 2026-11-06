@@ -15,6 +15,7 @@ class RecordBudgetSpend extends PipeRule
         $this->withoutErrorHandling();
 
         $ledger->charge($click->campaign, 0.40);
+        $this->info("Charged {$click->campaign} 0.40");
 
         return self::SUCCESS;
     }

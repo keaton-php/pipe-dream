@@ -8,10 +8,10 @@ class RecognizeCampaign extends PipeRule
 {
     public function recognizeCampaign($click)
     {
-        $campaign = $click->campaign();
+        $campaign = $click->campaignSettings();
 
         if ($campaign === null) {
-            $this->fatal("Unknown campaign {$click->param('campaign')}");
+            $this->fatal("Unknown campaign {$click->campaign}");
         }
 
         if ($campaign->paused) {

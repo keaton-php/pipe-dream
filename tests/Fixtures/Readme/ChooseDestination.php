@@ -10,7 +10,7 @@ class ChooseDestination extends PipeRule
     {
         $click->destination = $click->isFlagged()
             ? 'https://example.test/review'
-            : 'https://example.test/landing/'.$click->param('campaign');
+            : 'https://example.test/landing/'.$click->campaign;
 
         return self::SUCCESS;
     }

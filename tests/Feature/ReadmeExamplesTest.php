@@ -61,17 +61,59 @@ class ReadmeExamplesTest extends TestCase
         }
     }
 
-    public function test_every_php_block_in_the_tutorial_sections_is_backed_by_a_fixture(): void
+    public function test_every_php_block_in_the_readme_is_backed_by_a_fixture(): void
     {
-        $readme = $this->readme();
-        $tutorial = substr($readme, strpos($readme, "\n## One hub, with closures"), strpos($readme, "\n## See it running") - strpos($readme, "\n## One hub, with closures"));
+        preg_match_all('/(.*)\n```php\n/', $this->readme(), $blocks);
 
-        preg_match_all('/(.*)\n```php\n/', $tutorial, $blocks);
-
-        $this->assertNotEmpty($blocks[1]);
+        $this->assertGreaterThanOrEqual(20, count($blocks[1]));
 
         foreach ($blocks[1] as $lineBefore) {
-            $this->assertMatchesRegularExpression('/^<!-- example: \S+ -->$/', $lineBefore, 'A PHP block in the tutorial has no example marker');
+            $this->assertMatchesRegularExpression('/^<!-- example: \S+ -->$/', $lineBefore, 'A PHP block in the README has no example marker');
+        }
+    }
+
+    /**
+     * The README's examples may only depend on what the README shows. A
+     * test that runs one (runScript() or the full example's handle()) must
+     * not configure the container itself: any configuration an example
+     * needs is part of the example, so the reader sees it too.
+     */
+    public function test_example_tests_set_up_nothing_the_readme_does_not_show(): void
+    {
+        $class = new \ReflectionClass($this);
+        $lines = file($class->getFileName());
+        $checked = 0;
+
+        foreach ($class->getMethods() as $method) {
+            if ($method->class !== static::class || ! str_starts_with($method->name, 'test_') || $method->name === __FUNCTION__) {
+                continue;
+            }
+
+            $body = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
+
+            if (! str_contains($body, '$this->runScript(') && ! str_contains($body, '$this->handle(')) {
+                continue;
+            }
+
+            $checked++;
+
+            foreach (['->instance(', '->bind(', '->singleton(', '->extend(', '::fake(', 'config(', 'Config::'] as $setup) {
+                $this->assertStringNotContainsString($setup, $body, "{$method->name} sets up {$setup} that the README does not show");
+            }
+        }
+
+        $this->assertGreaterThanOrEqual(20, $checked);
+    }
+
+    public function test_readme_fixtures_carry_no_state_between_tests(): void
+    {
+        foreach ($this->fixtureClasses() as $fixture) {
+            foreach ((new \ReflectionClass($fixture))->getProperties(\ReflectionProperty::IS_STATIC) as $property) {
+                $this->assertTrue(
+                    in_array($property->name, ['name', 'description', 'runFunction', 'saveResultAs'], true),
+                    "{$fixture}::\${$property->name} is static state a README example could depend on"
+                );
+            }
         }
     }
 
@@ -252,8 +294,6 @@ class ReadmeExamplesTest extends TestCase
 
     public function test_on_failure_and_failure_is_fatal(): void
     {
-        $this->app->instance(BudgetLedger::class, $this->downLedger());
-
         $vars = $this->runScript('on-failure.php');
 
         $this->assertSame(3, $this->assertCommentedValues('on-failure.php', $vars));
@@ -283,12 +323,10 @@ class ReadmeExamplesTest extends TestCase
 
     public function test_the_budget_rule_succeeds_when_the_service_is_up(): void
     {
-        $this->app->instance(BudgetLedger::class, $ledger = new BudgetLedger());
-
         $envelope = PipeHub::create()->addPipe(RecordBudgetSpend::class)->sendIt((object) ['campaign' => 'spring-sale']);
 
         $this->assertSame(PipeRule::SUCCESS, $envelope->get(RecordBudgetSpend::class));
-        $this->assertSame([['spring-sale', 0.40]], $ledger->charges);
+        $this->assertSame('Charged spring-sale 0.40', $envelope->logger()->infos()->firstWhere('key', RecordBudgetSpend::class)['data']);
     }
 
     public function test_stop_on_error(): void
@@ -357,6 +395,37 @@ class ReadmeExamplesTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // Reference: events
+
+    public function test_events(): void
+    {
+        require_once self::FIXTURES.'/scripts/event-classes.php';
+
+        $vars = $this->runScript('events.php');
+
+        $this->assertSame(1, $this->assertCommentedValues('events.php', $vars));
+    }
+
+    public function test_a_skipped_hub_dispatches_only_the_skip_event(): void
+    {
+        require_once self::FIXTURES.'/scripts/event-classes.php';
+        $fired = [];
+        \Illuminate\Support\Facades\Event::listen([\BotChecksStarted::class, \BotChecksSkipped::class, \RuleStarting::class], function ($event) use (&$fired) {
+            $fired[] = class_basename($event);
+        });
+
+        PipeHub::create()
+            ->addPipe(\Keaton\PipeDream\Tests\Fixtures\Readme\DetectHostingProviderIp::class)
+            ->broadcastEventBefore(\BotChecksStarted::class)
+            ->broadcastEventOnSkip(\BotChecksSkipped::class)
+            ->broadcastEventBeforeEachPipe(\RuleStarting::class)
+            ->skipIf(fn () => true)
+            ->sendIt((object) ['ip' => '203.0.113.9']);
+
+        $this->assertSame(['BotChecksSkipped'], $fired);
+    }
+
+    // ------------------------------------------------------------------
     // 8. Putting it together
 
     private function click(array $query, string $ip = '203.0.113.9', string $userAgent = 'Mozilla/5.0'): Request
@@ -369,6 +438,10 @@ class ReadmeExamplesTest extends TestCase
 
     private function handle(Request $request)
     {
+        foreach (array_merge($this->fixtureClasses(), [PipeLoggerPersistStrategy::class]) as $class) {
+            $this->assertFalse($this->app->bound($class), "{$class} is bound before the full example runs");
+        }
+
         return $this->app->make(HandleAdClick::class)($request);
     }
 
@@ -385,6 +458,9 @@ class ReadmeExamplesTest extends TestCase
         $this->assertFalse($row->has_fatals);
         $this->assertStringStartsWith('Handled in', $row->logger()->recordsByKey('Intake')->first()['data']);
         $this->assertSame(8, $row->logger()->infos()->where('data', 'Sending subject through all pipes')->count());
+
+        // The click is charged to its own campaign, through the same rule as section 6.
+        $this->assertSame('Charged spring-sale 0.40', $row->logger()->infos()->firstWhere('key', RecordBudgetSpend::class)['data']);
     }
 
     public function test_an_unknown_campaign_ends_the_flow_at_validation(): void
@@ -421,6 +497,7 @@ class ReadmeExamplesTest extends TestCase
 
         $this->assertInstanceOf(View::class, $response);
         $this->assertSame('challenge', $response->name());
+        $this->assertSame(['click' => 'clk_200'], $response->getData());
         $this->assertSame(1, PipeDreamLog::count());
     }
 
@@ -445,10 +522,16 @@ class ReadmeExamplesTest extends TestCase
 
     private function downLedger(): BudgetLedger
     {
-        $ledger = new BudgetLedger();
-        $ledger->available = false;
+        return new BudgetLedger(available: false);
+    }
 
-        return $ledger;
+    /** @return array<class-string> every class under tests/Fixtures/Readme */
+    private function fixtureClasses(): array
+    {
+        return array_map(
+            fn ($file) => 'Keaton\\PipeDream\\Tests\\Fixtures\\Readme\\'.basename($file, '.php'),
+            glob(self::FIXTURES.'/*.php')
+        );
     }
 
     private function readme(): string
@@ -485,6 +568,12 @@ class ReadmeExamplesTest extends TestCase
     private function runScript(string $script, array $vars = []): array
     {
         $file = self::FIXTURES.'/scripts/'.$script;
+
+        // Every example starts from default fixtures: nothing bound that the
+        // README does not show (an example that needs a binding makes it).
+        foreach (array_merge($this->fixtureClasses(), [PipeLoggerPersistStrategy::class]) as $class) {
+            $this->assertFalse($this->app->bound($class), "{$class} is bound before README example {$script} runs");
+        }
 
         return (function () use ($file, $vars) {
             extract($vars);

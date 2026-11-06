@@ -57,7 +57,7 @@ class HandleAdClick
                     ->addPipes([
                         CheckAdvertiserSuppressionList::class,
                     ])
-                    ->skipIf(fn ($click) => $click->campaign()->isNewsletter())
+                    ->skipIf(fn ($click) => $click->campaignSettings()->isNewsletter())
                     ->stopOnFatal(),
 
                 PipeHub::create()
@@ -78,7 +78,7 @@ class HandleAdClick
                         MatchKnownBotUserAgents::class,
                         ScoreClickVelocity::class,
                     ])
-                    ->skipIf(fn ($click) => $click->campaign()->bot_checks_disabled)
+                    ->skipIf(fn ($click) => $click->campaignSettings()->bot_checks_disabled)
                     ->then(fn ($click) => $click->get('bot_signals') >= 2 ? $click->flag('Two or more bot signals') : null),
 
                 PipeHub::create()
