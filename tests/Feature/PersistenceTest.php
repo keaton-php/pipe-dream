@@ -54,21 +54,15 @@ class PersistenceTest extends TestCase
         $this->assertSame(1, $this->persist->calls);
     }
 
-    public function test_a_manager_persists_even_when_its_then_callback_throws(): void
+    public function test_a_manager_persists_once_when_its_then_callback_throws(): void
     {
-        $caught = null;
+        // An exception in then() is recorded as an error; sendIt() still returns.
+        $envelope = PipeManager::create($this->hubs())
+            ->subject(new stdClass())
+            ->then(fn () => throw new \LogicException('then failed'))
+            ->sendIt();
 
-        try {
-            PipeManager::create($this->hubs())
-                ->subject(new stdClass())
-                ->then(fn () => throw new \LogicException('then failed'))
-                ->sendIt();
-        } catch (\LogicException $e) {
-            $caught = $e;
-        }
-
-        $this->assertInstanceOf(\LogicException::class, $caught);
-        $this->assertSame('then failed', $caught->getMessage());
+        $this->assertTrue($envelope->hasErrors());
         $this->assertSame(1, $this->persist->calls);
     }
 

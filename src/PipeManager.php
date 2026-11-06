@@ -215,33 +215,19 @@ class PipeManager
 
                 $fatal = $e;
             } catch (Throwable $e) {
-                // Something a hub could not handle (a hub's onFatal() hook
-                // throwing, say): the flow cannot carry on, so it is a fatal.
+                // Anything a hub let through that is not a hand-off, a
+                // configuration error or a fatal: the flow cannot carry on.
                 $subject->logger()->fatal('PipeManager:sendIt', 'The flow cannot carry on: '.$e->getMessage(), ['exception' => get_class($e)] + $this->getPipeManagerContext());
 
                 $fatal = new PipeRuleFatal($e->getMessage(), $subject, 0, $e);
             }
 
-            if ($fatal && $this->onFatal) {
-                try {
-                    $this->callViaContainer($this->onFatal, ['subject' => $subject, 'exception' => $fatal]);
-                } catch (PipeRuleRedirect|PipeRuleLoadView $e) {
-                    if ($e instanceof PipeRuleRedirect) {
-                        $e->resolveRoute($this->app);
-                    }
-
-                    $subject->logger()->info('PipeManager:sendIt', 'Flow handed off: '.$e->getMessage());
-
-                    throw $e;
-                }
+            if ($completed) {
+                $fatal = $this->runThen($subject, $onFlowError);
             }
 
-            if ($completed) {
-                try {
-                    $this->callback($this->thenCallback, ['subject' => $subject]);
-                } catch (PipeRuleRedirect $e) {
-                    throw $e->resolveRoute($this->app);
-                }
+            if ($fatal) {
+                $this->runOnFatal($subject, $fatal);
             }
 
             $subject->logger()->info('PipeManager:sendIt', 'Finalized result!');
@@ -256,6 +242,76 @@ class PipeManager
         }
 
         return $subject;
+    }
+
+    /**
+     * then() is handled like a pipe: a fatal thrown there stops the flow as
+     * a fatal; any other exception is an error (recorded, reported to
+     * onError()) and the flow finishes as usual.
+     *
+     * @return PipeRuleFatal|null the fatal, when then() stopped the flow
+     */
+    protected function runThen(PipeEnvelope $subject, ?Closure $onFlowError): ?PipeRuleFatal
+    {
+        try {
+            $this->callback($this->thenCallback, ['subject' => $subject]);
+        } catch (PipeRuleRedirect $e) {
+            throw $e->resolveRoute($this->app);
+        } catch (PipeRuleLoadView|PipeHubException $e) {
+            throw $e;
+        } catch (PipeRuleFatal $e) {
+            $subject->logger()->fatal('PipeManager:then', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeManagerContext());
+            $subject->logger()->warning('PipeManager:sendIt', 'Flow stopped by a fatal: '.$e->getMessage(), $this->getPipeManagerContext());
+
+            return $e;
+        } catch (Throwable $e) {
+            $subject->logger()->error('PipeManager:then', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeManagerContext());
+
+            if ($onFlowError) {
+                try {
+                    $onFlowError($e);
+                } catch (PipeRuleRedirect $redirect) {
+                    throw $redirect->resolveRoute($this->app);
+                } catch (PipeRuleLoadView|PipeHubException $handoff) {
+                    throw $handoff;
+                } catch (Throwable $hookFailure) {
+                    // The error hook itself failed: the flow cannot finish cleanly.
+                    $subject->logger()->fatal('PipeManager:sendIt', 'The flow cannot carry on: '.$hookFailure->getMessage(), ['exception' => get_class($hookFailure)] + $this->getPipeManagerContext());
+
+                    return $hookFailure instanceof PipeRuleFatal
+                        ? $hookFailure
+                        : new PipeRuleFatal($hookFailure->getMessage(), $subject, 0, $hookFailure);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Run onFatal() for a fatal that stopped the flow. A redirect or view
+     * from it is handed off; any other exception from it is recorded and
+     * the stop carries on as planned.
+     */
+    protected function runOnFatal(PipeEnvelope $subject, PipeRuleFatal $fatal): void
+    {
+        if (! $this->onFatal) {
+            return;
+        }
+
+        try {
+            $this->callViaContainer($this->onFatal, ['subject' => $subject, 'exception' => $fatal]);
+        } catch (PipeRuleRedirect|PipeRuleLoadView $e) {
+            if ($e instanceof PipeRuleRedirect) {
+                $e->resolveRoute($this->app);
+            }
+
+            $subject->logger()->info('PipeManager:sendIt', 'Flow handed off: '.$e->getMessage());
+
+            throw $e;
+        } catch (Throwable $hookFailure) {
+            $subject->logger()->fatal('PipeManager:onFatal', 'onFatal() failed: '.$hookFailure->getMessage(), ['exception' => get_class($hookFailure)] + $this->getPipeManagerContext());
+        }
     }
 
     public function callback(?Closure $callback = null, $parameters = [])
