@@ -59,7 +59,7 @@ class StopSemanticsTest extends TestCase
     // ------------------------------------------------------------------
     // A hub run on its own
 
-    public function test_a_fatal_on_pipe_3_of_10_stops_the_hub_and_skips_then(): void
+    public function test_a_fatal_on_pipe_3_of_10_stops_the_hub_and_then_does_not_run(): void
     {
         $envelope = $this->hub('hub', 10, [3 => FatalRule::class])->sendIt(new stdClass());
 
