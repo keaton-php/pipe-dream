@@ -720,14 +720,14 @@ A demo app pushes 500 synthetic ad clicks through a five-stage, 14-rule flow. Ev
 
 ### Stopping, in one table
 
-| On the hub | A rule calls `fatal()` | A rule calls `error()` | An exception escapes a rule |
+| On the hub | A rule calls `fatal()` | A rule calls `error()` | An unexpected exception escapes a rule* |
 |---|---|---|---|
 | (default) | the hub ends: its remaining rules and `then()` are skipped, the next hub runs | logged as `FAIL`, the hub carries on | the hub ends as a failure, `onFailure()` runs, the next hub runs |
 | `->stopOnFatal()` | **the whole flow ends**: no later hub, and the manager's `then()` does not run | as default | as default |
 | `->stopOnError()` | as default | the hub ends as a failure, `onFailure()` runs, the next hub runs | as default |
 | `->failureIsFatal()` | as default | as default (or the flow ends, with `stopOnError()`) | `onFailure()` runs, a fatal is logged and **the whole flow ends** |
 
-"Exception" means any `Throwable`, PHP errors such as `TypeError` included. For unexpected exceptions, only `withoutErrorHandling()` lets one escape a rule; otherwise it is logged as a `FAIL` and the hub carries on. Fatals, errors under `stopOnError()`, redirects, views and configuration errors leave a rule by design. A configuration error (`PipeHubException`) is never treated as a failure: it is thrown straight out of the flow.
+\* "Unexpected exception" means any `Throwable` your code did not throw on purpose, PHP errors such as `TypeError` included. Normally a rule catches it, logs a `FAIL` and the hub carries on; it only escapes the rule, giving this column, when the rule uses `withoutErrorHandling()`. The intentional exits follow their own paths and are not covered by this column: fatals (the `fatal()` column), errors under `stopOnError()` (that row), redirects and views (passed straight out of the flow, see "Send the visitor somewhere else"), and configuration errors. A configuration error (`PipeHubException`) is never treated as a failure: it is thrown straight out of the flow.
 
 ### Skipping, in one table
 
@@ -820,7 +820,7 @@ Each run resolves the rule from the container. An ordinary (transient) binding r
 
 ### JSON-safe log values
 
-Every value is made JSON-safe as it is recorded, so saving a log can never fail and hide what the flow did. A rule may return anything, but `NAN` and `INF` are logged as the strings `"NAN"` / `"INF"`, resources as `"resource(stream)"`, closures as `"Closure"`, backed enums as their value and unit (pure) enums as their name, dates as ISO 8601 strings, exceptions as their class and message, other objects as their public properties plus a `__class` key (or what their `jsonSerialize()`, `toArray()` or `__toString()` gives), cycles as `"[recursion: Class]"`, nesting past 16 levels as `"[max depth]"`, and invalid UTF-8 bytes are replaced. The raw value is still what `$envelope->get(Rule::class)` and `$envelope->results()` return.
+Every value is made JSON-safe as it is recorded, so a value a rule returned can never make the log fail to encode and hide what the flow did. (Saving can still fail for ordinary reasons such as the database being down; those errors are not swallowed.) A rule may return anything, but `NAN` and `INF` are logged as the strings `"NAN"` / `"INF"`, resources as `"resource(stream)"`, closures as `"Closure"`, backed enums as their value and unit (pure) enums as their name, dates as ISO 8601 strings, exceptions as their class and message, other objects as their public properties plus a `__class` key (or what their `jsonSerialize()`, `toArray()` or `__toString()` gives), cycles as `"[recursion: Class]"`, nesting past 16 levels as `"[max depth]"`, and invalid UTF-8 bytes are replaced. The raw value is still what `$envelope->get(Rule::class)` and `$envelope->results()` return.
 
 ### Other storage formats and places
 
