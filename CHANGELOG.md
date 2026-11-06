@@ -17,7 +17,6 @@ All notable changes to this package are documented here. The format follows [Kee
 - A test suite on Orchestra Testbench, and a GitHub Actions matrix that runs it on PHP 8.1–8.4 against Laravel 9–13.
 - `Support\LogValue`, which makes every logged value JSON-safe.
 - `PipeEnvelope::wrap($subject, $container)` and `PipeEnvelope::container()`.
-
 - The README is a step-by-step tutorial, and every code example in it is run by `tests/Feature/ReadmeExamplesTest.php`.
 
 ### Fixed
