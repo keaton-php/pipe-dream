@@ -18,6 +18,8 @@ All notable changes to this package are documented here. The format follows [Kee
 - `Support\LogValue`, which makes every logged value JSON-safe.
 - `PipeEnvelope::wrap($subject, $container)` and `PipeEnvelope::container()`.
 
+- The README is a step-by-step tutorial, and every code example in it is run by `tests/Feature/ReadmeExamplesTest.php`.
+
 ### Fixed
 
 - PHP errors such as `TypeError` and `ArgumentCountError` escaped rules, hubs and the manager: only `\Exception` was caught, so they left no `FAIL` result and skipped `onFailure()` and `failureIsFatal()`. Every `Throwable` is now handled, after the fatal, redirect and load-view cases.
