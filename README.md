@@ -422,7 +422,7 @@ $click->destination;                          // null
 
 ### Send the visitor somewhere else
 
-A rule can hand control back to your controller by throwing `PipeRuleRedirect` (`PipeRuleRedirect::toUrl($url)` or `::toRoute($name)`) or `PipeRuleLoadView` (`PipeRuleLoadView::load($view, $data)`). These are never treated as failures: they come straight out of the hub (and the manager), after the log is saved.
+A rule can hand control back to your controller by throwing `PipeRuleRedirect` (`PipeRuleRedirect::toUrl($url)` or `::toRoute($name)`) or `PipeRuleLoadView` (`PipeRuleLoadView::load($view, $data)`). These are never treated as failures: they come straight out of the hub (and the manager), after the log has been handed to your persistence strategy (if one is set up; see below).
 
 <!-- example: docs/examples/ChallengeGraylistedPublishers.php -->
 ```php
@@ -554,7 +554,7 @@ use Keaton\PipeDream\Strategies\DatabasePersistStrategy;
 app()->bind(PipeLoggerPersistStrategy::class, DatabasePersistStrategy::class);
 ```
 
-A `PipeManager` saves the log once, when the flow ends, whether it completed, stopped early or threw. A hub run on its own saves when it finishes. Turn this off with `->persistLogs(false)` and call `$envelope->persist()` yourself when you want to save at a moment of your choosing.
+Once a persistence strategy is set up (below), a `PipeManager` saves the log once, when the flow ends, whether it completed, stopped early or threw. A hub run on its own saves when it finishes. With no strategy set up, nothing is written. Turn this off with `->persistLogs(false)` and call `$envelope->persist()` yourself when you want to save at a moment of your choosing.
 
 ### Reading a run back later
 
@@ -816,7 +816,7 @@ implode(', ', $fired);   // 'BotChecksStarted, RuleStarting(DetectHostingProvide
 
 ### Rule copies: shared and transient bindings
 
-Each run resolves the rule from the container. An ordinary (transient) binding runs exactly as the container returned it. A rule bound as shared (`singleton()`, `instance()`, `scoped()`, or the container's `#[Singleton]`/`#[Scoped]` attributes on Laravel versions that have them) runs as a clone, so the shared object is never executed or changed and runs never see each other's state. A shared rule that cannot be cloned (a private `__clone()`, or one that throws) is a configuration error: the flow throws a `PipeHubException` telling you to bind it non-shared, rather than silently skipping the rule. Keep anything that must outlive a run in an injected service. A hub given its own container (`PipeHub::create($container)`) uses it for everything in the run.
+Each run resolves the rule from the container. An ordinary (transient) binding runs exactly as the container returned it. A rule bound as shared (`singleton()`, `instance()`, `scoped()`, or the container's `#[Singleton]`/`#[Scoped]` attributes on Laravel versions that have them) runs as a clone, so the shared object is never executed or changed and runs never see each other's state. A shared rule that cannot be cloned (a private `__clone()`, or one that throws) is a configuration error: the flow throws a `PipeHubException` telling you to bind it non-shared, rather than silently skipping the rule. Keep anything that must outlive a run in an injected service. A hub given its own container (`PipeHub::create($container)`) runs its rules, callbacks and events in that container. An envelope you created yourself and passed in keeps the container it was created with for its own services, such as a persistence strategy bound in the container.
 
 ### JSON-safe log values
 
