@@ -28,36 +28,44 @@ trait PassesSubjectToCallbacks
         }
 
         $canonical = array_values(array_filter(['subject', 'exception'], fn ($key) => array_key_exists($key, $parameters)));
+        $values = array_intersect_key($parameters, array_flip($canonical));
         $declared = $reflection->getParameters();
+        $boundByName = [];
 
-        // A parameter already named `$subject` / `$exception` gets the value
-        // by name, but only if its declared type accepts it; otherwise the
-        // value is withdrawn so the container resolves it (or uses its default).
+        // A parameter named `$subject` / `$exception` gets that value by name,
+        // as the container would, but only if its declared type accepts it;
+        // otherwise the name is freed so the container resolves the
+        // parameter (or uses its default).
         foreach ($declared as $parameter) {
             $name = $parameter->getName();
 
-            if (in_array($name, $canonical, true) && ! $this->fits($name, $parameter, $parameters[$name])) {
-                unset($parameters[$name]);
+            if (in_array($name, $canonical, true)) {
+                if ($this->fits($name, $parameter, $values[$name])) {
+                    $boundByName[$name] = true;
+                } else {
+                    unset($parameters[$name]);
+                }
             }
         }
 
-        // Otherwise the subject goes to the first parameter and the exception
-        // to the second, whatever they are called, when the type accepts it.
+        // A value no parameter took by name goes by position: the subject to
+        // the first parameter, the exception to the second, whatever they are
+        // called, when the type accepts it.
         foreach ($canonical as $index => $key) {
             $parameter = $declared[$index] ?? null;
 
-            if (! $parameter || $parameter->isVariadic() || ! array_key_exists($key, $parameters)) {
+            if (isset($boundByName[$key]) || ! $parameter || $parameter->isVariadic()) {
                 continue;
             }
 
             $name = $parameter->getName();
 
-            if ($name === $key || array_key_exists($name, $parameters)) {
+            if (in_array($name, $canonical, true) || array_key_exists($name, $parameters)) {
                 continue;
             }
 
-            if ($this->fits($key, $parameter, $parameters[$key])) {
-                $parameters[$name] = $parameters[$key];
+            if ($this->fits($key, $parameter, $values[$key])) {
+                $parameters[$name] = $values[$key];
                 unset($parameters[$key]);
             }
         }
