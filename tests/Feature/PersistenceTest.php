@@ -47,7 +47,7 @@ class PersistenceTest extends TestCase
     public function test_a_manager_persists_once_when_a_fatal_ends_the_flow(): void
     {
         PipeManager::create([
-            PipeHub::create()->addPipe(FatalRule::class)->stopOnFatal(),
+            PipeHub::create()->addPipe(FatalRule::class),
             PipeHub::create()->addPipe(SecondRule::class),
         ])->subject(new stdClass())->sendIt();
 

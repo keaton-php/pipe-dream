@@ -7,8 +7,9 @@ use Keaton\PipeDream\Concerns\RecordsOrigin;
 use Throwable;
 
 /**
- * A rule failed. The failure is logged against the rule and the hub carries
- * on, unless the hub uses stopOnError() or the rule sets $errorsAreFatal.
+ * A rule failed. The failure is logged against the rule, the hub's
+ * onError() runs and the next pipe runs, unless errors are fatal (the
+ * hub's errorsAreFatal() or the rule's $errorsAreFatal).
  */
 class PipeRuleError extends Exception
 {

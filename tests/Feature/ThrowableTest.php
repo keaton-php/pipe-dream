@@ -12,13 +12,14 @@ use Keaton\PipeDream\Tests\Fixtures\Rules\FirstRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\SecondRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\ThirdRule;
 use Keaton\PipeDream\Tests\Fixtures\Rules\TypeErrorRule;
-use Keaton\PipeDream\Tests\Fixtures\Rules\UnhandledTypeErrorRule;
+use Keaton\PipeDream\Tests\Fixtures\Rules\FatalRule;
 use Keaton\PipeDream\Tests\TestCase;
 use stdClass;
 
 /**
- * PHP errors (TypeError, ArgumentCountError, ...) are failures like any
- * exception: recorded, handled by onFailure() and failureIsFatal().
+ * PHP errors (TypeError, ArgumentCountError, ...) are handled like any
+ * exception: recorded as errors, reported to onError(), and turned into
+ * fatals by errorsAreFatal().
  */
 class ThrowableTest extends TestCase
 {
@@ -67,41 +68,43 @@ class ThrowableTest extends TestCase
         $this->assertSame(\ArgumentCountError::class, $envelope->logger()->errors()->first()['context']['exception']);
     }
 
-    public function test_a_type_error_that_escapes_a_rule_runs_on_failure(): void
+    public function test_a_type_error_in_a_rule_runs_on_error(): void
     {
         $envelope = $this->flow(
             PipeHub::create()
-                ->addPipes([UnhandledTypeErrorRule::class, SecondRule::class])
-                ->onFailure(fn ($subject, $exception) => Journal::record('onFailure: '.get_class($exception)))
+                ->addPipes([TypeErrorRule::class, SecondRule::class])
+                ->onError(fn ($subject, $exception) => Journal::record('onError: '.get_class($exception)))
         );
 
-        $this->assertSame(['FirstRule', 'UnhandledTypeErrorRule', 'onFailure: TypeError', 'ThirdRule', 'manager then'], Journal::$entries);
-        $this->assertSame(PipeRule::FAIL, $envelope->get(UnhandledTypeErrorRule::class));
+        $this->assertSame(['FirstRule', 'TypeErrorRule', 'onError: TypeError', 'SecondRule', 'middle then', 'ThirdRule', 'manager then'], Journal::$entries);
+        $this->assertSame(PipeRule::FAIL, $envelope->get(TypeErrorRule::class));
     }
 
-    public function test_failure_is_fatal_applies_to_a_type_error(): void
+    public function test_errors_are_fatal_applies_to_a_type_error(): void
     {
         $envelope = $this->flow(
             PipeHub::create()
-                ->addPipes([UnhandledTypeErrorRule::class, SecondRule::class])
-                ->failureIsFatal()
-                ->onFailure(fn () => Journal::record('onFailure'))
+                ->addPipes([TypeErrorRule::class, SecondRule::class])
+                ->errorsAreFatal()
+                ->onFatal(fn ($subject, $exception) => Journal::record('onFatal: '.get_class($exception->getPrevious())))
         );
 
-        $this->assertSame(['FirstRule', 'UnhandledTypeErrorRule', 'onFailure'], Journal::$entries);
+        $this->assertSame(['FirstRule', 'TypeErrorRule', 'onFatal: TypeError'], Journal::$entries);
         $this->assertTrue($envelope->hasFatalErrors());
+        $this->assertSame(PipeRule::FATAL_FAIL, $envelope->get(TypeErrorRule::class));
     }
 
-    public function test_a_type_error_in_skip_if_is_a_hub_failure(): void
+    public function test_a_type_error_in_skip_if_stops_the_flow_as_a_fatal(): void
     {
         $envelope = $this->flow(
             PipeHub::create()
                 ->addPipe(SecondRule::class)
                 ->skipIf(fn ($subject) => strlen([]))
-                ->onFailure(fn () => Journal::record('onFailure'))
+                ->onFatal(fn ($subject, $exception) => Journal::record('onFatal: '.get_class($exception->getPrevious())))
         );
 
-        $this->assertSame(['FirstRule', 'onFailure', 'ThirdRule', 'manager then'], Journal::$entries);
+        $this->assertSame(['FirstRule', 'onFatal: TypeError'], Journal::$entries);
+        $this->assertSame(\TypeError::class, $envelope->logger()->fatals()->firstWhere('key', 'PipeHub:sendIt')['context']['exception']);
     }
 
     public function test_an_error_thrown_by_a_then_callback_is_logged(): void
@@ -114,19 +117,19 @@ class ThrowableTest extends TestCase
         $this->assertSame(\TypeError::class, $envelope->logger()->errors()->first()['context']['exception']);
     }
 
-    public function test_an_error_escaping_a_hub_is_caught_by_the_manager(): void
+    public function test_an_error_escaping_a_hub_stops_the_flow_as_a_fatal_in_the_manager(): void
     {
         $envelope = $this->flow(
             PipeHub::create()
-                ->addPipe(UnhandledTypeErrorRule::class)
-                ->onFailure(fn ($subject) => strlen([]))   // onFailure itself throws a TypeError
+                ->addPipe(FatalRule::class)
+                ->onFatal(fn ($subject) => strlen([]))   // onFatal itself throws a TypeError
         );
 
         // The flow stops and the manager's then() does not run, but nothing escapes.
-        $this->assertSame(['FirstRule', 'UnhandledTypeErrorRule'], Journal::$entries);
+        $this->assertSame(['FirstRule', 'FatalRule'], Journal::$entries);
         $this->assertSame(
             \TypeError::class,
-            $envelope->logger()->errors()->firstWhere('key', 'PipeManager:sendIt')['context']['exception']
+            $envelope->logger()->fatals()->firstWhere('key', 'PipeManager:sendIt')['context']['exception']
         );
     }
 }

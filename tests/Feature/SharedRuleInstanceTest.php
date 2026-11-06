@@ -26,7 +26,7 @@ use stdClass;
  * A rule bound as shared (singleton or instance) is the same object every
  * time the container resolves it. Hubs run a copy of a shared rule per run,
  * so the shared instance is never executed or changed and one hub's skip or
- * stop policy never sticks. A transient resolution runs as it is.
+ * errorsAreFatal() policy never sticks. A transient resolution runs as it is.
  */
 class SharedRuleInstanceTest extends TestCase
 {
@@ -59,12 +59,12 @@ class SharedRuleInstanceTest extends TestCase
         $this->assertSame(PipeRule::SUCCESS, $second->get(FirstRule::class));
     }
 
-    public function test_stop_on_error_does_not_follow_a_shared_rule_into_the_next_hub(): void
+    public function test_errors_are_fatal_does_not_follow_a_shared_rule_into_the_next_hub(): void
     {
         $this->app->singleton(ErrorRule::class);
 
         PipeManager::create([
-            PipeHub::create()->addPipes([ErrorRule::class, SecondRule::class])->stopOnError(),
+            PipeHub::create()->addPipes([ErrorRule::class, SecondRule::class])->errorsAreFatal()->fatalsStopThisHubOnly(),
             PipeHub::create()->addPipes([ErrorRule::class, ThirdRule::class]),
         ])->subject(new stdClass())->sendIt();
 
@@ -72,11 +72,11 @@ class SharedRuleInstanceTest extends TestCase
         $this->assertSame(['ErrorRule', 'ErrorRule', 'ThirdRule'], Journal::$entries);
     }
 
-    public function test_stop_on_error_does_not_follow_a_shared_rule_into_the_next_run(): void
+    public function test_errors_are_fatal_does_not_follow_a_shared_rule_into_the_next_run(): void
     {
         $this->app->singleton(ErrorRule::class);
 
-        PipeHub::create()->addPipes([ErrorRule::class, SecondRule::class])->stopOnError()->sendIt(new stdClass());
+        PipeHub::create()->addPipes([ErrorRule::class, SecondRule::class])->errorsAreFatal()->sendIt(new stdClass());
         PipeHub::create()->addPipes([ErrorRule::class, ThirdRule::class])->sendIt(new stdClass());
 
         $this->assertSame(['ErrorRule', 'ErrorRule', 'ThirdRule'], Journal::$entries);
@@ -90,7 +90,7 @@ class SharedRuleInstanceTest extends TestCase
 
         PipeManager::create([
             PipeHub::create()->addPipe(ErrorRule::class)->skipIf(fn () => true),
-            PipeHub::create()->addPipes([ErrorRule::class, SecondRule::class])->stopOnError(),
+            PipeHub::create()->addPipes([ErrorRule::class, SecondRule::class])->errorsAreFatal()->onError(fn () => null),
         ])->subject(new stdClass())->sendIt();
 
         $this->assertSame($pristine, serialize($this->app->make(ErrorRule::class)));
@@ -139,7 +139,7 @@ class SharedRuleInstanceTest extends TestCase
         $this->assertSame([
             'outer subject intact: yes',
             'outer skipping: no',
-            'outer stops on error: no',
+            'outer errors are fatal: no',
             'outer container is the inner one: no',
         ], Journal::$entries);
         $this->assertSame(PipeRule::SUCCESS, $envelope->get(ReentrantRule::class));
@@ -186,7 +186,7 @@ class SharedRuleInstanceTest extends TestCase
 
         try {
             PipeManager::create([
-                PipeHub::create()->addPipes([FirstRule::class, PrivateCloneRule::class])->onFailure(fn () => Journal::record('onFailure')),
+                PipeHub::create()->addPipes([FirstRule::class, PrivateCloneRule::class])->onError(fn () => Journal::record('onError'))->onFatal(fn () => Journal::record('onFatal')),
                 PipeHub::create()->addPipe(SecondRule::class),
             ])->subject(PipeEnvelope::wrap(new stdClass())->persistWith($persist))->sendIt();
 
@@ -238,7 +238,6 @@ class SharedRuleInstanceTest extends TestCase
     {
         $envelope = PipeHub::create()
             ->addPipes([\Keaton\PipeDream\Tests\Fixtures\Rules\ErrorsAreFatalRule::class, SecondRule::class])
-            ->stopOnError()
             ->sendIt(new stdClass());
 
         $this->assertSame(PipeRule::FATAL_FAIL, $envelope->get(\Keaton\PipeDream\Tests\Fixtures\Rules\ErrorsAreFatalRule::class));

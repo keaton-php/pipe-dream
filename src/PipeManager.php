@@ -13,7 +13,8 @@ use Keaton\PipeDream\Exceptions\PipeRuleRedirect;
 use Throwable;
 
 /**
- * A whole flow: hubs run in order against one envelope. The log is
+ * A whole flow: hubs run in order against one envelope. A fatal in any hub
+ * stops the flow (unless that hub uses fatalsStopThisHubOnly()). The log is
  * persisted once, when the flow ends, whether it completed or not.
  */
 class PipeManager
@@ -29,6 +30,10 @@ class PipeManager
     protected ?string $description = null;
 
     protected ?Closure $thenCallback = null;
+
+    protected ?Closure $onError = null;
+
+    protected ?Closure $onFatal = null;
 
     protected bool $persistLogsOnFinalize = true;
 
@@ -94,11 +99,37 @@ class PipeManager
     }
 
     /**
-     * Runs after the last hub, unless a fatal ended the flow early.
+     * Runs after the last hub, unless a fatal stopped the flow. A fatal
+     * contained to its hub (fatalsStopThisHubOnly()) does not stop it.
      */
     public function then(Closure $callback)
     {
         $this->thenCallback = $callback;
+
+        return $this;
+    }
+
+    /**
+     * Runs for every error() and unexpected exception recorded by a pipe in
+     * any hub, with fn ($subject, $exception), after that hub's own
+     * onError(); then the flow carries on.
+     */
+    public function onError(Closure $callback)
+    {
+        $this->onError = $callback;
+
+        return $this;
+    }
+
+    /**
+     * Runs when a fatal stops the flow, with fn ($subject, $exception), the
+     * exception being the PipeRuleFatal, after the hub's own onFatal() and
+     * before sendIt() returns or throws. Not for a fatal contained to its
+     * hub. A redirect or view thrown from it is handed off as usual.
+     */
+    public function onFatal(Closure $callback)
+    {
+        $this->onFatal = $callback;
 
         return $this;
     }
@@ -114,17 +145,16 @@ class PipeManager
     }
 
     /**
-     * Rethrow the fatal that ended the flow out of sendIt(), so a try/catch
-     * around the flow catches it. Off by default: sendIt() returns the
-     * envelope and the fatal is only recorded on it.
+     * Rethrow the fatal that stopped the flow out of sendIt(), so a
+     * try/catch around the flow catches it. Off by default: sendIt()
+     * returns the envelope and the fatal is only recorded on it.
      *
-     * Only a fatal that ends the flow is thrown: one from a hub with
-     * stopOnFatal(), or the fatal failureIsFatal() raises. A fatal that
-     * ends just its own hub lets the flow carry on and is not thrown.
-     * Everything else still happens first: the fatal is logged, then() is
-     * skipped and the log is persisted. The same PipeRuleFatal is thrown,
-     * so subject() is the envelope (its log included) and getPrevious()
-     * is the failure behind a failureIsFatal() fatal.
+     * A fatal contained to its hub (fatalsStopThisHubOnly()) lets the flow
+     * carry on and is never thrown. Everything else still happens first:
+     * the fatal is logged, onFatal() runs, then() is skipped and the log is
+     * persisted. The same PipeRuleFatal is thrown, so subject() is the
+     * envelope (its log included) and getPrevious() is the error or
+     * exception behind a fatal raised by errorsAreFatal().
      */
     public function throwFatals($shouldThrow = true)
     {
@@ -134,7 +164,7 @@ class PipeManager
     }
 
     /**
-     * @throws PipeRuleFatal with throwFatals(), when a fatal ended the flow
+     * @throws PipeRuleFatal with throwFatals(), when a fatal stopped the flow
      */
     public function sendIt()
     {
@@ -152,12 +182,16 @@ class PipeManager
 
         $fatal = null;
 
+        $onFlowError = $this->onError
+            ? fn (Throwable $e) => $this->callViaContainer($this->onError, ['subject' => $subject, 'exception' => $e])
+            : null;
+
         try {
             $completed = false;
 
             try {
                 foreach ($this->hubs as $hub) {
-                    $subject = $this->subject = $hub->sendItWithinFlow($subject);
+                    $subject = $this->subject = $hub->sendItWithinFlow($subject, $onFlowError);
                 }
 
                 $completed = true;
@@ -181,7 +215,25 @@ class PipeManager
 
                 $fatal = $e;
             } catch (Throwable $e) {
-                $subject->logger()->error('PipeManager:sendIt', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeManagerContext());
+                // Something a hub could not handle (a hub's onFatal() hook
+                // throwing, say): the flow cannot carry on, so it is a fatal.
+                $subject->logger()->fatal('PipeManager:sendIt', 'The flow cannot carry on: '.$e->getMessage(), ['exception' => get_class($e)] + $this->getPipeManagerContext());
+
+                $fatal = new PipeRuleFatal($e->getMessage(), $subject, 0, $e);
+            }
+
+            if ($fatal && $this->onFatal) {
+                try {
+                    $this->callViaContainer($this->onFatal, ['subject' => $subject, 'exception' => $fatal]);
+                } catch (PipeRuleRedirect|PipeRuleLoadView $e) {
+                    if ($e instanceof PipeRuleRedirect) {
+                        $e->resolveRoute($this->app);
+                    }
+
+                    $subject->logger()->info('PipeManager:sendIt', 'Flow handed off: '.$e->getMessage());
+
+                    throw $e;
+                }
             }
 
             if ($completed) {
@@ -249,6 +301,16 @@ class PipeManager
     public function getThen(): ?Closure
     {
         return $this->thenCallback;
+    }
+
+    public function getOnError(): ?Closure
+    {
+        return $this->onError;
+    }
+
+    public function getOnFatal(): ?Closure
+    {
+        return $this->onFatal;
     }
 
     public function persistsLogs(): bool

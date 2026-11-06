@@ -124,16 +124,16 @@ class FlowTest extends TestCase
             ->addPipes([FirstRule::class, SecondRule::class])
             ->skipIf($skipIf)
             ->then($then)
-            ->stopOnFatal()
-            ->stopOnError();
+            ->fatalsStopThisHubOnly()
+            ->errorsAreFatal();
 
         $this->assertSame('Fraud', $hub->getName());
         $this->assertSame('Is this a person?', $hub->getDescription());
         $this->assertSame([FirstRule::class, SecondRule::class], $hub->getPipes());
         $this->assertSame($skipIf, $hub->getSkipIf());
         $this->assertSame($then, $hub->getThen());
-        $this->assertTrue($hub->stopsOnFatal());
-        $this->assertTrue($hub->stopsOnError());
+        $this->assertTrue($hub->stopsOnlyThisHubOnFatal());
+        $this->assertTrue($hub->treatsErrorsAsFatal());
         $this->assertFalse($hub->isSkipped());
         $this->assertTrue($hub->skip()->isSkipped());
 
@@ -141,8 +141,8 @@ class FlowTest extends TestCase
         $this->assertNull($bare->getName());
         $this->assertNull($bare->getDescription());
         $this->assertNull($bare->getSkipIf());
-        $this->assertFalse($bare->stopsOnFatal());
-        $this->assertFalse($bare->stopsOnError());
+        $this->assertFalse($bare->stopsOnlyThisHubOnFatal());
+        $this->assertFalse($bare->treatsErrorsAsFatal());
     }
 
     public function test_a_pipe_that_does_not_exist_throws(): void
