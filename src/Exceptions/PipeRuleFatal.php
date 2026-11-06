@@ -31,14 +31,15 @@ class PipeRuleFatal extends Exception
     }
 
     /**
-     * Fill in the subject when the fatal was thrown without one (a
-     * PipeRuleFatal constructed by hand). A subject already set is kept.
+     * Point the fatal at the flow's envelope before throwFatals() rethrows
+     * it, so subject() is always the envelope (and its log), whatever the
+     * fatal was constructed with.
      *
      * @internal
      */
     public function withSubject($subject)
     {
-        $this->subject ??= $subject;
+        $this->subject = $subject;
 
         return $this;
     }

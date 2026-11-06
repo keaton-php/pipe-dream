@@ -33,27 +33,97 @@ trait PassesSubjectToCallbacks
             $positions[] = 'exception';
         }
 
-        foreach ($positions as $index => $key) {
-            $parameter = $reflection->getParameters()[$index] ?? null;
+        $declared = $reflection->getParameters();
 
-            if (! $parameter || array_key_exists($parameter->getName(), $parameters)) {
+        foreach ($positions as $index => $key) {
+            $parameter = $declared[$index] ?? null;
+
+            if (! $parameter || $parameter->isVariadic() || array_key_exists($parameter->getName(), $parameters)) {
                 continue;
             }
 
-            if ($this->parameterAccepts($parameter, $parameters[$key])) {
-                $parameters[$parameter->getName()] = $parameters[$key];
+            $value = $parameters[$key];
+
+            // A hook's second parameter typed as some exception class always
+            // gets the real exception, so PHP reports a mismatch instead of
+            // the container quietly building a fresh, unrelated exception.
+            $isExceptionSlot = $key === 'exception' && $this->namesAThrowable($parameter->getType());
+
+            if ($isExceptionSlot || $this->typeAccepts($parameter->getType(), $value)) {
+                $parameters[$parameter->getName()] = $value;
+                unset($parameters[$key]);
             }
         }
 
         return $parameters;
     }
 
-    private function parameterAccepts(\ReflectionParameter $parameter, $value): bool
+    private function typeAccepts(?\ReflectionType $type, $value): bool
     {
-        $type = $parameter->getType();
+        if ($type === null) {
+            return true;
+        }
 
-        return ! $type instanceof \ReflectionNamedType
-            || $type->isBuiltin()
-            || $value instanceof ($type->getName());
+        if ($type instanceof \ReflectionUnionType) {
+            foreach ($type->getTypes() as $member) {
+                if ($this->typeAccepts($member, $value)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if ($type instanceof \ReflectionIntersectionType) {
+            foreach ($type->getTypes() as $member) {
+                if (! $this->typeAccepts($member, $value)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        if (! $type instanceof \ReflectionNamedType) {
+            return false;
+        }
+
+        $name = $type->getName();
+
+        if (! $type->isBuiltin()) {
+            return $value instanceof $name;
+        }
+
+        return match ($name) {
+            'mixed' => true,
+            'object' => is_object($value),
+            'iterable' => is_iterable($value),
+            'callable' => is_callable($value),
+            'array' => is_array($value),
+            'string' => is_string($value),
+            'int' => is_int($value),
+            'float' => is_float($value),
+            'bool' => is_bool($value),
+            'false' => $value === false,
+            'true' => $value === true,
+            'null' => $value === null,
+            default => false,
+        };
+    }
+
+    private function namesAThrowable(?\ReflectionType $type): bool
+    {
+        $types = $type instanceof \ReflectionUnionType || $type instanceof \ReflectionIntersectionType
+            ? $type->getTypes()
+            : [$type];
+
+        foreach ($types as $member) {
+            if ($member instanceof \ReflectionNamedType && ! $member->isBuiltin()
+                && (is_a($member->getName(), \Throwable::class, true))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

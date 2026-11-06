@@ -117,7 +117,7 @@ class ThrowableTest extends TestCase
         $this->assertSame(\TypeError::class, $envelope->logger()->errors()->first()['context']['exception']);
     }
 
-    public function test_an_error_escaping_a_hub_stops_the_flow_as_a_fatal_in_the_manager(): void
+    public function test_a_type_error_in_on_fatal_is_recorded_and_the_flow_still_stops(): void
     {
         $envelope = $this->flow(
             PipeHub::create()
@@ -125,11 +125,11 @@ class ThrowableTest extends TestCase
                 ->onFatal(fn ($subject) => strlen([]))   // onFatal itself throws a TypeError
         );
 
-        // The flow stops and the manager's then() does not run, but nothing escapes.
+        // The flow stops as planned and the manager's then() does not run; nothing escapes.
         $this->assertSame(['FirstRule', 'FatalRule'], Journal::$entries);
         $this->assertSame(
             \TypeError::class,
-            $envelope->logger()->fatals()->firstWhere('key', 'PipeManager:sendIt')['context']['exception']
+            $envelope->logger()->fatals()->firstWhere('key', 'PipeHub:onFatal')['context']['exception']
         );
     }
 }

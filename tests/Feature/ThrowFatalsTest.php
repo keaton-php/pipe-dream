@@ -133,7 +133,7 @@ class ThrowFatalsTest extends TestCase
         $this->assertTrue($caught->subject()->hasFatalErrors());
     }
 
-    public function test_a_fatal_that_already_has_a_subject_keeps_it(): void
+    public function test_a_fatal_constructed_with_another_subject_is_given_the_envelope(): void
     {
         $mine = new stdClass();
 
@@ -141,7 +141,8 @@ class ThrowFatalsTest extends TestCase
             PipeHub::create()->addPipe(fn () => throw new PipeRuleFatal('Mine', $mine)),
         ])->subject(new stdClass())->throwFatals()->sendIt());
 
-        $this->assertSame($mine, $caught->subject());
+        $this->assertInstanceOf(PipeEnvelope::class, $caught->subject());
+        $this->assertNotSame($mine, $caught->subject());
     }
 
     public function test_a_contained_fatal_is_not_thrown(): void
@@ -253,15 +254,16 @@ class ThrowFatalsTest extends TestCase
         $this->assertTrue($envelope->hasFatalErrors());
     }
 
-    public function test_a_fatal_thrown_from_the_managers_then_leaves_send_it_even_by_default(): void
+    public function test_a_fatal_thrown_from_the_managers_then_is_quiet_by_default_and_thrown_with_throw_fatals(): void
     {
-        // Not a fatal raised in a hub: it escapes like any exception from then(), after persisting.
-        $this->catchFatal(fn () => PipeManager::create([PipeHub::create()->addPipe(FirstRule::class)])
+        $build = fn () => PipeManager::create([PipeHub::create()->addPipe(FirstRule::class)])
             ->subject(new stdClass())
-            ->then(fn () => throw new PipeRuleFatal('From then()'))
-            ->sendIt());
+            ->then(fn () => throw new PipeRuleFatal('From then()'));
 
-        $this->assertSame(['FirstRule', 'caught after 1 persist'], Journal::$entries);
+        $this->assertTrue($build()->sendIt()->hasFatalErrors());
+
+        $this->catchFatal(fn () => $build()->throwFatals()->sendIt());
+        $this->assertSame(['FirstRule', 'FirstRule', 'caught after 2 persist'], Journal::$entries);
     }
 
     // ------------------------------------------------------------------
