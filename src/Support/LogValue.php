@@ -18,7 +18,7 @@ use Throwable;
  * - NAN, INF and -INF become the strings "NAN", "INF" and "-INF";
  * - resources become "resource(stream)" (or "resource (closed)");
  * - arrays are normalised recursively, up to MAX_DEPTH levels;
- * - closures become "Closure"; enums their value (or name); dates an
+ * - closures become "Closure"; backed enums their value, unit enums their name; dates an
  *   ISO 8601 string; exceptions their class and message;
  * - JsonSerializable, Arrayable and Stringable objects use what they
  *   provide; any other object becomes its public properties plus a

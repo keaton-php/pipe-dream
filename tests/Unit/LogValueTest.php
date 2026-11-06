@@ -5,6 +5,7 @@ namespace Keaton\PipeDream\Tests\Unit;
 use Keaton\PipeDream\PipeLogger;
 use Keaton\PipeDream\Strategies\PipeLoggerJsonStrategy;
 use Keaton\PipeDream\Support\LogValue;
+use Keaton\PipeDream\Tests\Fixtures\Shade;
 use Keaton\PipeDream\Tests\Fixtures\Thermometer;
 use Keaton\PipeDream\Tests\Fixtures\Verdict;
 use Keaton\PipeDream\Tests\TestCase;
@@ -40,10 +41,12 @@ class LogValueTest extends TestCase
         $this->assertStringStartsWith('caf', $normalized);
     }
 
+    /** Backed enums are logged as their value, unit (pure) enums as their name. */
     public function test_objects_become_data(): void
     {
         $this->assertSame(['__class' => Thermometer::class, 'degrees' => 30], LogValue::normalize(new Thermometer(30)));
         $this->assertSame('approved', LogValue::normalize(Verdict::Approved));
+        $this->assertSame('Dark', LogValue::normalize(Shade::Dark));
         $this->assertSame(['exception' => \RuntimeException::class, 'message' => 'Boom'], LogValue::normalize(new \RuntimeException('Boom')));
         $this->assertSame('2026-11-05T12:00:00+00:00', LogValue::normalize(new \DateTimeImmutable('2026-11-05 12:00:00', new \DateTimeZone('UTC'))));
         $this->assertSame(['a' => 1], LogValue::normalize(collect(['a' => 1])));
