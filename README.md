@@ -20,7 +20,7 @@ A **hub** is an ordered list of steps (called **pipes**) that a subject passes t
 
 `sendIt()` wraps the click in a `PipeEnvelope` and hands that to each pipe in turn. The envelope passes property reads, property writes and method calls straight through to your object, so `$click->country` and `$click->destination = …` work as you would expect. It also carries things of its own: values the pipes share, written with `set($key, $value)` and read with `get($key)`, every pipe's result, and a log.
 
-<!-- example: scripts/click-check.php -->
+<!-- example: docs/examples/scripts/click-check.php -->
 ```php
 <?php
 
@@ -39,30 +39,27 @@ $envelope = PipeHub::create()
         },
     ])
     ->sendIt($click);
-```
 
-Each pipe is timed and its result is recorded. A closure's result is whatever it returns; returning nothing counts as success (`1`). Print the log as a timeline:
-
-<!-- example: scripts/render-timeline.php -->
-```php
 $t0 = $envelope->logs()[0]['time'];
 
 foreach ($envelope->logs() as $record) {
     printf("%7.3f ms  %-11s %-28s %s\n",
-        ($record['time'] - $t0) * 1000, $record['type'], class_basename($record['key']), $record['data']);
+        ($record['time'] - $t0) * 1000, $record['type'], $record['key'], $record['data']);
 }
 ```
 
-<!-- output: scripts/click-check.php -->
+Each pipe is timed and its result is recorded. A closure's result is whatever it returns; returning nothing counts as success (`1`). The last lines print the log as a timeline:
+
+<!-- output: docs/examples/scripts/click-check.php -->
 ```text
   0.000 ms  info        PipeHub:sendIt               Sending subject through all pipes
-  0.232 ms  timerStart  Closure@click-check.php:10   Executing rule Closure@click-check.php:10
-  0.436 ms  returnValue Closure@click-check.php:10   1
-  0.440 ms  timerEnd    Closure@click-check.php:10   Finished executing rule Closure@click-check.php:10
-  0.444 ms  timerStart  Closure@click-check.php:13   Executing rule Closure@click-check.php:13
-  0.453 ms  returnValue Closure@click-check.php:13   1
-  0.454 ms  timerEnd    Closure@click-check.php:13   Finished executing rule Closure@click-check.php:13
-  0.457 ms  info        PipeHub:sendIt               Finalized result!
+  0.251 ms  timerStart  Closure@click-check.php:10   Executing rule Closure@click-check.php:10
+  0.457 ms  returnValue Closure@click-check.php:10   1
+  0.462 ms  timerEnd    Closure@click-check.php:10   Finished executing rule Closure@click-check.php:10
+  0.466 ms  timerStart  Closure@click-check.php:13   Executing rule Closure@click-check.php:13
+  0.475 ms  returnValue Closure@click-check.php:13   1
+  0.476 ms  timerEnd    Closure@click-check.php:13   Finished executing rule Closure@click-check.php:13
+  0.479 ms  info        PipeHub:sendIt               Finalized result!
 ```
 
 A closure's log key is the file and line it was written on. Your times will differ.
@@ -71,8 +68,10 @@ A closure's log key is the file and line it was written on. Your times will diff
 
 Closures are fine for small steps. For anything you want to name, test or reuse, write a rule class. A rule has one public method named after the class. Its first parameter receives the envelope, whatever you call it; any other parameter is built and injected by Laravel's container (`RegionMap` below is an ordinary class of yours that maps CA, US and MX to North America). Inside the rule, `$this->info()` and `$this->warning()` write a line to the log against the rule:
 
-<!-- example: ResolveRegion.php -->
+<!-- example: docs/examples/ResolveRegion.php -->
 ```php
+<?php
+
 use Keaton\PipeDream\PipeRule;
 
 class ResolveRegion extends PipeRule
@@ -90,8 +89,10 @@ class ResolveRegion extends PipeRule
 }
 ```
 
-<!-- example: ChooseLandingPage.php -->
+<!-- example: docs/examples/ChooseLandingPage.php -->
 ```php
+<?php
+
 use Keaton\PipeDream\PipeRule;
 
 class ChooseLandingPage extends PipeRule
@@ -108,10 +109,16 @@ class ChooseLandingPage extends PipeRule
 }
 ```
 
-The hub takes class names instead of closures (the click is the same one as above). From here on, a line ending in `// value` shows what that expression gives you:
+The hub takes class names instead of closures. Each example from here on is a complete file (rule classes like the ones above are autoloaded), and a line ending in `// value` shows what that expression gives you:
 
-<!-- example: scripts/rule-hub.php -->
+<!-- example: docs/examples/scripts/rule-hub.php -->
 ```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+
+$click = (object) ['id' => 'clk_123', 'campaign' => 'spring-sale', 'country' => 'CA'];
+
 $envelope = PipeHub::create()
     ->name('Check the click')
     ->addPipes([
@@ -136,8 +143,10 @@ What a class gives you over a closure:
 
 ## What a rule can return
 
-<!-- example: CheckCampaignStatus.php -->
+<!-- example: docs/examples/CheckCampaignStatus.php -->
 ```php
+<?php
+
 use Keaton\PipeDream\PipeRule;
 
 class CheckCampaignStatus extends PipeRule
@@ -175,16 +184,21 @@ class CheckCampaignStatus extends PipeRule
 | `return $this->skip('why');` | `SKIP` (4), and the reason | the next pipe runs |
 | `$this->error('why');` | `FAIL` (2), and an error record | the next pipe runs |
 | `$this->fatal('why');` | `FATAL_FAIL` (3), and a fatal record | the rest of this hub is skipped |
-| any other exception or PHP error | `FAIL` (2), and an error record | the next pipe runs |
+| any other exception or PHP error, except the three below | `FAIL` (2), and an error record | the next pipe runs |
 
-`error()` and `fatal()` stop the rule at that line, and their records point at that line in your rule. The next sections show how a hub can react to these differently.
+`error()` and `fatal()` stop the rule at that line, and their records point at that line in your rule. Three exceptions are not failures and are never recorded as `FAIL`: `PipeRuleRedirect` and `PipeRuleLoadView` hand control back to your controller (see "Send the visitor somewhere else" below), and `PipeHubException`, a configuration error, is thrown straight out of the flow. The next sections show how a hub can react to the rest differently.
 
 ## Stages in order: PipeManager
 
 A real flow has several stages. A `PipeManager` runs hubs in order, all on the same envelope, so the whole run has one log and one set of results:
 
-<!-- example: scripts/manager.php -->
+<!-- example: docs/examples/scripts/manager.php -->
 ```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeManager;
+
 $click = (object) ['id' => 'clk_124', 'campaign' => 'spring-sale', 'country' => 'US'];
 
 $envelope = PipeManager::create([
@@ -217,8 +231,12 @@ Each of these is one method on a hub.
 
 Suppression lists do not apply to newsletter-type campaigns. `CheckAdvertiserSuppressionList` is a rule that calls `fatal()` when the visitor has opted out:
 
-<!-- example: scripts/skip-if.php -->
+<!-- example: docs/examples/scripts/skip-if.php -->
 ```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+
 $click = (object) ['id' => 'clk_125', 'campaignType' => 'newsletter', 'email' => 'opted-out@example.test'];
 
 $envelope = PipeHub::create()
@@ -237,8 +255,12 @@ When the callback returns true, no rule in the hub runs, but each one is still l
 
 `then()` runs after the hub's last rule, and can look at everything the rules recorded. Here each bot check adds one to a shared `bot_signals` value (with `$click->set()`) when it spots a sign of a bot, and returns `FAIL`:
 
-<!-- example: scripts/then.php -->
+<!-- example: docs/examples/scripts/then.php -->
 ```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+
 $click = (object) ['id' => 'clk_126', 'ip' => '198.51.100.20', 'userAgent' => 'ExampleBot/2.1', 'flagged' => false];
 
 $envelope = PipeHub::create()
@@ -264,8 +286,13 @@ A `PipeManager` has a `then()` too, which runs after the last hub.
 
 By default a fatal ends only the hub it happened in, and the flow moves on to the next hub. With `stopOnFatal()`, a fatal in that hub ends the whole flow:
 
-<!-- example: scripts/stop-on-fatal.php -->
+<!-- example: docs/examples/scripts/stop-on-fatal.php -->
 ```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeManager;
+
 $click = (object) ['id' => 'clk_127', 'campaign' => 'no-such-campaign', 'destination' => null];
 
 $envelope = PipeManager::create([
@@ -289,8 +316,10 @@ Leave `stopOnFatal()` off and the Route hub still runs. The manager's `then()` d
 
 A rule normally logs an unexpected exception and carries on. A rule that calls `$this->withoutErrorHandling()` lets it reach the hub instead, which counts as a **failure**: the hub stops, and `onFailure()` runs.
 
-<!-- example: RecordBudgetSpend.php -->
+<!-- example: docs/examples/RecordBudgetSpend.php -->
 ```php
+<?php
+
 use Keaton\PipeDream\PipeRule;
 
 class RecordBudgetSpend extends PipeRule
@@ -313,8 +342,10 @@ class RecordBudgetSpend extends PipeRule
 
 `BudgetLedger` is an ordinary class of yours; this one can be told the budget service is down:
 
-<!-- example: BudgetLedger.php -->
+<!-- example: docs/examples/BudgetLedger.php -->
 ```php
+<?php
+
 class BudgetLedger
 {
     public function __construct(public bool $available = true)
@@ -334,8 +365,13 @@ class BudgetLedger
 
 With the ledger unavailable, `charge()` throws:
 
-<!-- example: scripts/on-failure.php -->
+<!-- example: docs/examples/scripts/on-failure.php -->
 ```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeManager;
+
 // The budget service is down, so every charge() throws.
 app()->instance(BudgetLedger::class, new BudgetLedger(available: false));
 
@@ -366,8 +402,12 @@ $click->destination;                      // null
 
 By default an `error()` is logged and the hub carries on. With `stopOnError()`, an error ends the hub as a failure (so `onFailure()` would run):
 
-<!-- example: scripts/stop-on-error.php -->
+<!-- example: docs/examples/scripts/stop-on-error.php -->
 ```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+
 $click = (object) ['id' => 'clk_129', 'campaign' => 'winter-sale', 'destination' => null];
 
 $envelope = PipeHub::create()
@@ -384,8 +424,10 @@ $click->destination;                          // null
 
 A rule can hand control back to your controller by throwing `PipeRuleRedirect` (`PipeRuleRedirect::toUrl($url)` or `::toRoute($name)`) or `PipeRuleLoadView` (`PipeRuleLoadView::load($view, $data)`). These are never treated as failures: they come straight out of the hub (and the manager), after the log is saved.
 
-<!-- example: ChallengeGraylistedPublishers.php -->
+<!-- example: docs/examples/ChallengeGraylistedPublishers.php -->
 ```php
+<?php
+
 use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
 use Keaton\PipeDream\PipeRule;
 
@@ -405,8 +447,13 @@ class ChallengeGraylistedPublishers extends PipeRule
 }
 ```
 
-<!-- example: scripts/load-view.php -->
+<!-- example: docs/examples/scripts/load-view.php -->
 ```php
+<?php
+
+use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
+use Keaton\PipeDream\PipeHub;
+
 $click = (object) ['id' => 'clk_130', 'publisher' => 'pub-77'];
 
 try {
@@ -423,8 +470,12 @@ try {
 
 ### Reading it
 
-<!-- example: scripts/log-reading.php -->
+<!-- example: docs/examples/scripts/log-reading.php -->
 ```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+
 $click = (object) ['id' => 'clk_131', 'campaign' => 'no-such-campaign'];
 
 $envelope = PipeHub::create()->addPipes([CheckCampaignStatus::class])->sendIt($click);
@@ -442,8 +493,14 @@ Every record is an array with a `time`, a `key` (the rule class, a closure's fil
 
 To set anything on the envelope before a run, wrap the subject yourself with `PipeEnvelope::wrap()` and send the envelope:
 
-<!-- example: scripts/log-level.php -->
+<!-- example: docs/examples/scripts/log-level.php -->
 ```php
+<?php
+
+use Keaton\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeLogger;
+
 $click = (object) ['id' => 'clk_132', 'campaign' => 'no-such-campaign'];
 
 $envelope = PipeEnvelope::wrap($click)->logLevel(PipeLogger::LEVEL_PROBLEMS);
@@ -460,8 +517,16 @@ $envelope->results()->count();            // 1
 
 With the migration published and run, `DatabasePersistStrategy` stores each run as one row in `pipe_dream_logs`:
 
-<!-- example: scripts/database.php -->
+<!-- example: docs/examples/scripts/database.php -->
 ```php
+<?php
+
+use Keaton\PipeDream\Models\PipeDreamLog;
+use Keaton\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeManager;
+use Keaton\PipeDream\Strategies\DatabasePersistStrategy;
+
 $click = (object) ['id' => 'clk_133', 'campaign' => 'spring-sale', 'country' => 'CA'];
 
 $envelope = PipeEnvelope::wrap($click)->persistWith(new DatabasePersistStrategy());
@@ -478,33 +543,51 @@ PipeDreamLog::where('run_id', $envelope->runId())->count();   // 1
 
 The row holds the run id, the flow's name, the log (JSON), `has_errors` / `has_fatals`, and the subject's type and id when the subject is a saved Eloquent model. It is written with a single upsert keyed on the run id, so saving the same run again updates its row instead of adding a second one. To use it for every flow, bind it once:
 
-<!-- example: scripts/bind-strategy.php -->
+<!-- example: docs/examples/scripts/bind-strategy.php -->
 ```php
-// In a service provider's register() method:
-$this->app->bind(PipeLoggerPersistStrategy::class, DatabasePersistStrategy::class);
+<?php
+
+use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
+use Keaton\PipeDream\Strategies\DatabasePersistStrategy;
+
+// Usually in a service provider's register() method, as $this->app->bind(...).
+app()->bind(PipeLoggerPersistStrategy::class, DatabasePersistStrategy::class);
 ```
 
 A `PipeManager` saves the log once, when the flow ends, whether it completed, stopped early or threw. A hub run on its own saves when it finishes. Turn this off with `->persistLogs(false)` and call `$envelope->persist()` yourself when you want to save at a moment of your choosing.
 
 ### Reading a run back later
 
-<!-- example: scripts/rebuild.php -->
+<!-- example: docs/examples/scripts/rebuild.php -->
 ```php
-$run = PipeDreamLog::forRun($envelope->runId())->firstOrFail();
+<?php
 
-$run->flow;                               // 'Ad click intake'
-$run->has_fatals;                         // false
-$run->logger()->records() == $envelope->logs();   // true
+use Keaton\PipeDream\Models\PipeDreamLog;
+
+$run = PipeDreamLog::where('flow', 'Ad click intake')->latest()->firstOrFail();
+
+$run->has_fatals;                                                         // false
+$run->logger()->fatals()->count();                                        // 0
+$run->logger()->infos()->firstWhere('key', ResolveRegion::class)['data'];  // 'Visitor is in North America'
 ```
 
-`PipeDreamLog::logger()` rebuilds the stored records into a logger, ready for a timeline view. `PipeDreamLog::withProblems()` finds runs with errors or fatals.
+`PipeDreamLog::logger()` rebuilds the stored records into a logger, ready for a timeline view. `PipeDreamLog::forRun($runId)` finds one run by its id, and `PipeDreamLog::withProblems()` finds runs with errors or fatals.
 
 ## Putting it together: managing a click
 
-This is how the pieces combine in a click-management flow: an incoming ad click is validated and given a session, tracked, checked against geo exclusions, checked against the advertiser's suppression list (skipped for newsletter-type campaigns), checked against blacklists and graylists, checked for bots (skipped when a campaign turns bot checks off), counted against caps and budget, and routed.
+Here is the shape of a full click-management flow, in eight stages: validate the click and start a session, tracking, geo exclusions, the advertiser's suppression list (skipped for newsletter-type campaigns), blacklists and graylists, bot checks (skipped when a campaign turns bot checks off), caps and budget, and routing.
 
-<!-- example: HandleAdClick.php -->
+The subject is `IncomingClick`, a class of your own that the controller builds from the request. It has the same fields as the plain clicks in the earlier examples (`id`, `campaign`, `country`, `ip`, `userAgent`, `publisher`, `email`), so the same rules work on it, and a few methods the flow calls through the envelope:
+
+- `campaignSettings()`: the campaign's record (its target countries, its type, and whether bot checks are off);
+- `flag($reason)` and `isFlagged()`: mark the click as doubtful, and ask whether it is;
+- `isListed()`: whether a blacklist rule matched;
+- `isTest()`, `markComplete()` and `destination()`: a test click, the end of the run, and where to send the visitor.
+
+<!-- example: docs/examples/HandleAdClick.php -->
 ```php
+<?php
+
 use Illuminate\Http\Request;
 use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
 use Keaton\PipeDream\Exceptions\PipeRuleRedirect;
@@ -621,7 +704,9 @@ class HandleAdClick
 }
 ```
 
-The rules are ordinary `PipeRule` classes like the ones above. `IncomingClick` is your own class: it has the same fields as the plain clicks in the earlier examples (`id`, `campaign`, `country`, `ip`, `userAgent`, `publisher`, `email`), so the same rules work on it, plus a few methods the flow calls through the envelope: `campaignSettings()` (the campaign's countries, type and bot-check switch), `flag()`, `isFlagged()`, `isListed()`, `isTest()`, `markComplete()` and `destination()`. The controller persists once in `finally`, after recording how long the click took, so every click gets exactly one row, including the ones that redirect or end early.
+The rules used earlier in this README (`CheckAdvertiserSuppressionList`, `ChallengeGraylistedPublishers`, `DetectHostingProviderIp`, `MatchKnownBotUserAgents`, `RecordBudgetSpend`) work here as described there. The other rules are small stand-ins in `docs/examples/`: some have just enough of a body for the example to be tested (`RequireTrackingParameters`, `RecognizeCampaign`, `StartClickSession`, `ResolveVisitorCountry`, `EnforceCampaignCountries`, `MatchIpBlacklist`, `ChooseDestination`), and the rest are placeholders that only return `SUCCESS`, named for what your own rule would do (`VerifyClickSignature`, `SetAttributionCookie`, `RecordConversionPath`, `EnforceAdvertiserGeoExclusions`, `MatchPublisherBlacklist`, `ScoreClickVelocity`, `EnforceDailyClickCap`).
+
+The controller saves the log once, in `finally`, after recording how long the click took, so every click gets exactly one row, including the ones that end early or hand off to a view.
 
 ## See it running
 
@@ -648,8 +733,8 @@ A demo app pushes 500 synthetic ad clicks through a five-stage, 14-rule flow. Ev
 
 | | What runs | What is logged | `then()` |
 |---|---|---|---|
-| `->skipIf(fn ($s) => …)` returns true | no rule executes | every rule, as `SKIP` with the reason | runs |
-| `->skip()` | nothing in the hub | one "Skipping hub" line | does not run |
+| `->skipIf(fn ($s) => …)` returns true | no rule executes | every rule, as `SKIP` with the reason (plus a `PipeHub:event` line when a skip event is set) | runs |
+| `->skip()` | nothing in the hub | one "Skipping hub" line (plus a `PipeHub:event` line when a skip event is set) | does not run |
 | `$envelope->skipAll()` (from a rule or callback) | nothing after that point, in this hub or any later hub | every remaining rule, as `SKIP` | runs |
 | a rule returns `$this->skip('…')` | the rule ran and decided to skip | that rule, as `SKIP` with the reason | runs |
 
@@ -664,8 +749,10 @@ A demo app pushes 500 synthetic ad clicks through a five-stage, 14-rule flow. Ev
 
 A hub can dispatch Laravel events at five points. Hub events are constructed with the envelope; per-rule events with the envelope and the rule's key. Declare the event classes:
 
-<!-- example: scripts/event-classes.php -->
+<!-- example: docs/examples/BotCheckEvents.php -->
 ```php
+<?php
+
 use Keaton\PipeDream\PipeEnvelope;
 
 class BotChecksStarted
@@ -696,8 +783,13 @@ class RuleFinished
 
 Then name them on the hub:
 
-<!-- example: scripts/events.php -->
+<!-- example: docs/examples/scripts/events.php -->
 ```php
+<?php
+
+use Illuminate\Support\Facades\Event;
+use Keaton\PipeDream\PipeHub;
+
 $fired = [];
 
 Event::listen(
@@ -728,7 +820,7 @@ Each run resolves the rule from the container. An ordinary (transient) binding r
 
 ### JSON-safe log values
 
-Every value is made JSON-safe as it is recorded, so saving a log can never fail and hide what the flow did. A rule may return anything, but `NAN` and `INF` are logged as the strings `"NAN"` / `"INF"`, resources as `"resource(stream)"`, closures as `"Closure"`, enums as their value, dates as ISO 8601 strings, exceptions as their class and message, other objects as their public properties plus a `__class` key (or what their `jsonSerialize()`, `toArray()` or `__toString()` gives), cycles as `"[recursion: Class]"`, nesting past 16 levels as `"[max depth]"`, and invalid UTF-8 bytes are replaced. The raw value is still what `$envelope->get(Rule::class)` and `$envelope->results()` return.
+Every value is made JSON-safe as it is recorded, so saving a log can never fail and hide what the flow did. A rule may return anything, but `NAN` and `INF` are logged as the strings `"NAN"` / `"INF"`, resources as `"resource(stream)"`, closures as `"Closure"`, backed enums as their value and unit (pure) enums as their name, dates as ISO 8601 strings, exceptions as their class and message, other objects as their public properties plus a `__class` key (or what their `jsonSerialize()`, `toArray()` or `__toString()` gives), cycles as `"[recursion: Class]"`, nesting past 16 levels as `"[max depth]"`, and invalid UTF-8 bytes are replaced. The raw value is still what `$envelope->get(Rule::class)` and `$envelope->results()` return.
 
 ### Other storage formats and places
 
@@ -749,7 +841,7 @@ composer install
 composer test
 ```
 
-The suite uses Orchestra Testbench, and its database tests run on in-memory SQLite. Every PHP example in this README is run, as written, by `tests/Feature/ReadmeExamplesTest.php`.
+The suite uses Orchestra Testbench, and its database tests run on in-memory SQLite. Every PHP block in this README is a complete file in `docs/examples/`, shown exactly as it is; `tests/Feature/ReadmeExamplesTest.php` runs each script and loads each class just as shown, and checks every `// value` comment.
 
 ### Changelog and license
 
