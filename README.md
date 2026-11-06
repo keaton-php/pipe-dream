@@ -66,7 +66,7 @@ A closure's log key is the file and line it was written on. Your times will diff
 
 ## The same hub, with PipeRule classes
 
-Closures are fine for small steps. For anything you want to name, test or reuse, write a rule class. A rule has one public method named after the class. Its first parameter receives the envelope, whatever you call it; any other parameter is built and injected by Laravel's container (`RegionMap` below is an ordinary class of yours that maps CA, US and MX to North America). Inside the rule, `$this->info()` and `$this->warning()` write a line to the log against the rule:
+Closures are fine for small steps. For anything you want to name, test or reuse, write a rule class. A rule has one public method named after the class. Its first parameter receives the envelope, whatever you call it; any other parameter is built and injected by Laravel's container (`RegionMap` in the example below is an ordinary class of yours that maps CA, US and MX to North America; it's in `docs/examples/`). Inside the rule, `$this->info()` and `$this->warning()` write a line to the log against the rule:
 
 <!-- example: docs/examples/ResolveRegion.php -->
 ```php
@@ -554,7 +554,7 @@ use Keaton\PipeDream\Strategies\DatabasePersistStrategy;
 app()->bind(PipeLoggerPersistStrategy::class, DatabasePersistStrategy::class);
 ```
 
-Once a persistence strategy is set up (below), a `PipeManager` saves the log once, when the flow ends, whether it completed, stopped early or threw. A hub run on its own saves when it finishes. With no strategy set up, nothing is written. Turn this off with `->persistLogs(false)` and call `$envelope->persist()` yourself when you want to save at a moment of your choosing.
+Once a persistence strategy is set up (as above), a `PipeManager` saves the log once, when the flow ends, whether it completed, stopped early or threw. A hub run on its own saves when it finishes. With no strategy set up, nothing is written. Turn this off with `->persistLogs(false)` and call `$envelope->persist()` yourself when you want to save at a moment of your choosing.
 
 ### Reading a run back later
 
@@ -824,7 +824,7 @@ Every value is made JSON-safe as it is recorded, so a value a rule returned can 
 
 ### Other storage formats and places
 
-`new DatabasePersistStrategy(new PipeLoggerSerializeStrategy())` stores PHP `serialize()` output instead of JSON (rebuilt with `allowed_classes => false`, so a stored log can never instantiate objects); pass the same strategy to `PipeDreamLog::logger()` to read it back. A run is saved with the strategy given to `$envelope->persistWith()`, else the one bound to `PipeLoggerPersistStrategy` in the container; with neither, nothing is written. To store logs somewhere else, implement `PipeLoggerPersistStrategy`, which has one method, `persist(PipeEnvelope $subject)`; `$subject->logger()->output()` gives you the log as JSON.
+`new DatabasePersistStrategy(new PipeLoggerSerializeStrategy())` stores PHP `serialize()` output instead of JSON (rebuilt with `allowed_classes => false`, so a stored log can never instantiate objects); pass the same strategy to `PipeDreamLog::logger()` to read it back. A run is saved with the strategy given to `$envelope->persistWith()`, else the one bound to `PipeLoggerPersistStrategy` in the container; with neither, nothing is written. To store logs somewhere else, implement `PipeLoggerPersistStrategy`, which has one method, `persist(PipeEnvelope $subject)`; `$subject->logger()->output()` gives you the log as JSON by default.
 
 ### Introspecting a flow
 
