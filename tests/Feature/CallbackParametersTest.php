@@ -199,4 +199,21 @@ class CallbackParametersTest extends TestCase
         $this->assertSame($envelope, $seen['swapped'][0]);
         $this->assertSame(\Keaton\PipeDream\Exceptions\PipeRuleFatal::class, $seen['swapped'][1]);
     }
+
+    public function test_an_exception_named_parameter_of_the_wrong_class_is_a_type_error_too(): void
+    {
+        $received = 'not called';
+
+        // Named $exception and typed LogicException, given a RuntimeException:
+        // never a LogicException built by the container, always a loud TypeError.
+        $envelope = PipeHub::create()
+            ->addPipe(ExplodingRule::class)
+            ->onError(function (LogicException $exception) use (&$received) {
+                $received = $exception;
+            })
+            ->sendIt(new stdClass());
+
+        $this->assertSame('not called', $received);
+        $this->assertSame(\TypeError::class, $envelope->logger()->fatals()->firstWhere('key', 'PipeHub:sendIt')['context']['exception']);
+    }
 }
