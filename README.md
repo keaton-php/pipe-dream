@@ -83,7 +83,7 @@ No `$next` to call and nothing to return: the hub moves on to the next pipe by i
 
 ### The subject travels in an envelope
 
-The hub wraps your subject in a `PipeEnvelope`, and that is what each pipe receives (and what `sendIt()` returns). Reads, writes and method calls go straight through to your object:
+The hub wraps your subject in a `PipeEnvelope`, and that is what each pipe receives as its first parameter (and what `sendIt()` returns). Leave that parameter untyped, or type it `PipeEnvelope`. Reads, writes and method calls go straight through to your object:
 
 <!-- example: docs/examples/scripts/envelope.php -->
 ```php
@@ -229,7 +229,7 @@ hello-pipe-dream
 
 ## Rules: pipes as classes
 
-A closure is fine for a small step. A `PipeRule` class gives a step a name, a home and a test. The hub runs the public method named after the class:
+A closure is fine for a small step. A `PipeRule` class gives a step a name, a home and a test. The hub runs the public method named after the class. Inside it, `$this->info('…')` writes a line to the log against the rule, and returning `self::SUCCESS` records that the step passed (the other results, and `$this->error()` / `$this->fatal()`, come in *Controlling the flow* below):
 
 <!-- example: docs/examples/TidyTitle.php -->
 ```php
@@ -875,17 +875,17 @@ implode(', ', $fired);   // 'BotChecksStarted, RuleStarting(DetectHostingProvide
 
 ### Rule copies: shared and transient bindings
 
-Each run resolves the rule from the container. An ordinary (transient) binding runs exactly as the container returned it. A rule bound as shared (`singleton()`, `instance()`, `scoped()`, or the container's `#[Singleton]`/`#[Scoped]` attributes on Laravel versions that have them) runs as a clone, so the shared object is never executed or changed and runs never see each other's state. A shared rule that cannot be cloned (a private `__clone()`, or one that throws) is a configuration error: the flow throws a `PipeHubException` telling you to bind it non-shared, rather than silently skipping the rule. Keep anything that must outlive a run in an injected service. A hub given its own container (`PipeHub::create($container)`) uses it for everything in the run.
+Each run resolves the rule from the container. An ordinary (transient) binding runs exactly as the container returned it. A rule bound as shared (`singleton()`, `instance()`, `scoped()`, or the container's `#[Singleton]`/`#[Scoped]` attributes on Laravel versions that have them) runs as a clone, so the shared object is never executed and the rule's own scalar settings never carry from one run to the next. PHP clones are shallow: an object held in a property of a shared rule is still shared, so give the rule a `__clone()` that copies it if each run needs its own. A shared rule that cannot be cloned (a private `__clone()`, or one that throws) is a configuration error: the flow throws a `PipeHubException` telling you to bind it non-shared, rather than silently skipping the rule. Keep anything that must outlive a run in an injected service. A hub given its own container (`PipeHub::create($container)`) runs its rules, callbacks and events in that container. An envelope you created yourself and passed in keeps the container it was created with for its own services, such as a persistence strategy bound in the container.
 
 ### JSON-safe log values
 
-Every value is made JSON-safe as it is recorded, so saving a log can never fail and hide what the flow did. A rule may return anything, but `NAN` and `INF` are logged as the strings `"NAN"` / `"INF"`, resources as `"resource(stream)"`, closures as `"Closure"`, backed enums as their value and unit (pure) enums as their name, dates as ISO 8601 strings, exceptions as their class and message, other objects as their public properties plus a `__class` key (or what their `jsonSerialize()`, `toArray()` or `__toString()` gives), cycles as `"[recursion: Class]"`, nesting past 16 levels as `"[max depth]"`, and invalid UTF-8 bytes are replaced. The raw value is still what `$envelope->get(Rule::class)` and `$envelope->results()` return.
+Every value is made JSON-safe as it is recorded, so a value a rule returned can never make the log fail to encode and hide what the flow did. (Saving can still fail for ordinary reasons such as the database being down; those errors are not swallowed.) A rule may return anything, but `NAN` and `INF` are logged as the strings `"NAN"` / `"INF"`, resources as `"resource(stream)"`, closures as `"Closure"`, backed enums as their value and unit (pure) enums as their name, dates as ISO 8601 strings, exceptions as their class and message, other objects as their public properties plus a `__class` key (or what their `jsonSerialize()`, `toArray()` or `__toString()` gives), cycles as `"[recursion: Class]"`, nesting past 16 levels as `"[max depth]"`, and invalid UTF-8 bytes are replaced. The raw value is still what `$envelope->get(Rule::class)` and `$envelope->results()` return.
 
 ### Saving logs
 
-A manager saves the log once, when the flow ends, whether it completed, stopped early or threw; a hub run on its own saves when it finishes. `->persistLogs(false)` turns that off, so you can call `$envelope->persist()` yourself. A run is saved with the strategy given to `$envelope->persistWith()`, else the one bound to `PipeLoggerPersistStrategy` in the container (bind `DatabasePersistStrategy` there once to use it for every flow); with neither, nothing is written.
+Once a persistence strategy is set up, a manager saves the log once, when the flow ends, whether it completed, stopped early or threw; a hub run on its own saves when it finishes. `->persistLogs(false)` turns that off, so you can call `$envelope->persist()` yourself. A run is saved with the strategy given to `$envelope->persistWith()`, else the one bound to `PipeLoggerPersistStrategy` in the container (bind `DatabasePersistStrategy` there once to use it for every flow); with neither, nothing is written.
 
-The `pipe_dream_logs` row holds the run id, the flow's name, the log (JSON), `has_errors` / `has_fatals`, and the subject's type and id when the subject is a saved Eloquent model. It is written with a single upsert keyed on the run id. `PipeDreamLog::forRun($runId)` finds a run, `PipeDreamLog::withProblems()` finds runs with errors or fatals, and `logger()` rebuilds a run's records. `new DatabasePersistStrategy(new PipeLoggerSerializeStrategy())` stores PHP `serialize()` output instead of JSON (rebuilt with `allowed_classes => false`, so a stored log can never instantiate objects); pass the same strategy to `logger()` to read it back. To store logs somewhere else, implement `PipeLoggerPersistStrategy`, which has one method, `persist(PipeEnvelope $subject)`; `$subject->logger()->output()` gives you the log as JSON.
+The `pipe_dream_logs` row holds the run id, the flow's name, the log (JSON), `has_errors` / `has_fatals`, and the subject's type and id when the subject is a saved Eloquent model. It is written with a single upsert keyed on the run id. The query scopes `PipeDreamLog::forRun($runId)->first()` (one run) and `PipeDreamLog::withProblems()->get()` (runs with errors or fatals) find runs, and `logger()` rebuilds a run's records. `new DatabasePersistStrategy(new PipeLoggerSerializeStrategy())` stores PHP `serialize()` output instead of JSON (rebuilt with `allowed_classes => false`, so a stored log can never instantiate objects); pass the same strategy to `logger()` to read it back. To store logs somewhere else, implement `PipeLoggerPersistStrategy`, which has one method, `persist(PipeEnvelope $subject)`; `$subject->logger()->output()` gives you the log as JSON.
 
 ### Introspecting a flow
 
