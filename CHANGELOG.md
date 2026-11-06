@@ -13,6 +13,7 @@ All notable changes to this package are documented here. The format follows [Kee
 - `PipeHub::broadcastEventOnSkip()`.
 - Read-only getters for tooling: `PipeManager::getName()`, `getDescription()`, `getHubs()`, `getThen()`; `PipeHub::getSkipIf()`, `getThen()`, `getOnFailure()`, `getEvents()`, `stopsOnFatal()`, `stopsOnError()`, `isFailureFatal()`, `isSkipped()`, `persistsLogs()`.
 - `PipeManager::persistLogs()`.
+- `PipeManager::throwFatals()` and `PipeHub::throwFatals()` (for a hub run on its own), with `throwsFatals()` getters. Off by default. With it, the fatal that ended the flow is rethrown out of `sendIt()` (the same `PipeRuleFatal`, its `subject()` the envelope) after it is logged, `then()` is skipped and the log is persisted. In a manager only a fatal that ends the flow (`stopOnFatal()`, `failureIsFatal()`) is thrown; a hub run on its own throws any fatal.
 - `ClosurePipe`: closures added to a hub are timed, logged and recorded like rules.
 - A test suite on Orchestra Testbench, and a GitHub Actions matrix that runs it on PHP 8.1–8.4 against Laravel 9–13.
 - `Support\LogValue`, which makes every logged value JSON-safe.
@@ -58,8 +59,8 @@ All notable changes to this package are documented here. The format follows [Kee
 ### Changed
 
 - **Package name.** The package is `keaton-php/pipe-dream` and its namespace is `Keaton\PipeDream`; update your `composer.json` and `use` statements from the old pre-release name.
-- **Fatal semantics.** Previously a fatal always ended the whole flow. Now, without `stopOnFatal()`, a fatal ends the current hub (its remaining pipes and its `then()` do not run), a warning is logged, and the flow continues with the next hub. With `stopOnFatal()` the fatal ends the whole flow and the manager's `then()` does not run. Add `stopOnFatal()` to every hub whose fatals must end the flow.
-- A standalone hub (`$hub->sendIt()`) no longer rethrows a fatal; it returns the envelope. Use `hasFatalErrors()`.
+- **Fatal semantics.** Previously a fatal always ended the whole flow. Now, without `stopOnFatal()`, a fatal ends the current hub (its remaining pipes and its `then()` do not run), a warning is logged, and the flow continues with the next hub. With `stopOnFatal()` the fatal ends the whole flow and the manager's `then()` does not run. Add `stopOnFatal()` to every hub whose fatals must end the flow, and `throwFatals()` to the manager to catch that fatal around `sendIt()`.
+- A standalone hub (`$hub->sendIt()`) no longer rethrows a fatal by default; it returns the envelope. Use `hasFatalErrors()`, or `throwFatals()` to have it thrown.
 - `failureIsFatal()` is now a flag that works alongside `onFailure()` (it used to replace the `onFailure()` callback). A failure in that hub runs `onFailure()`, logs a fatal and ends the flow.
 - `onFailure()` callbacks can also take the exception, as `$exception`.
 - The hub records a stop as a `warning` (`PipeHub:sendIt`, with `context.ends` = `hub` or `flow`) rather than an `error`, so a fatal on its own no longer makes `hasErrors()` true.
