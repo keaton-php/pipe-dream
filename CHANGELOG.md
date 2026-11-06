@@ -11,9 +11,11 @@ All notable changes to this package are documented here. The format follows [Kee
 - `PipeLoggerJsonStrategy`, now the default output strategy.
 - Log levels: `PipeLogger::LEVEL_EVERYTHING` (default), `LEVEL_NO_TIMERS` and `LEVEL_PROBLEMS`, applied when a record is added.
 - `PipeHub::broadcastEventOnSkip()`.
-- Read-only getters for tooling: `PipeManager::getName()`, `getDescription()`, `getHubs()`, `getThen()`; `PipeHub::getSkipIf()`, `getThen()`, `getOnFailure()`, `getEvents()`, `stopsOnFatal()`, `stopsOnError()`, `isFailureFatal()`, `isSkipped()`, `persistsLogs()`.
+- Read-only getters for tooling: `PipeManager::getName()`, `getDescription()`, `getHubs()`, `getThen()`, `getOnError()`, `getOnFatal()`, `throwsFatals()`, `persistsLogs()`; `PipeHub::getSkipIf()`, `getThen()`, `getOnError()`, `getOnFatal()`, `getEvents()`, `stopsOnlyThisHubOnFatal()`, `treatsErrorsAsFatal()`, `isSkipped()`, `throwsFatals()`, `persistsLogs()`.
 - `PipeManager::persistLogs()`.
-- `PipeManager::throwFatals()` and `PipeHub::throwFatals()` (for a hub run on its own), with `throwsFatals()` getters. Off by default. With it, the fatal that ended the flow is rethrown out of `sendIt()` (the same `PipeRuleFatal`, its `subject()` the envelope) after it is logged, `then()` is skipped and the log is persisted. In a manager only a fatal that ends the flow (`stopOnFatal()`, `failureIsFatal()`) is thrown; a hub run on its own throws any fatal.
+- **How far a stop reaches, set on the hub.** `PipeHub::fatalsStopThisHubOnly()` contains a hub's fatals to that hub: the manager moves on to the next hub and its `then()` still runs. `PipeHub::errorsAreFatal()` makes every `error()` and unexpected exception in the hub's pipes a fatal (and the rule-level `$errorsAreFatal` now covers unexpected exceptions too).
+- **`onError()` and `onFatal()` hooks** on both `PipeHub` and `PipeManager`, called with the envelope and the exception (in the first and second parameters, whatever they are named). `onError()` runs for every error or unexpected exception a pipe records, hub first, then manager, and the next pipe runs. `onFatal()` runs when a fatal stops the hub (hub hook) or the flow (manager hook), before `sendIt()` returns or throws. A redirect or view thrown from either is handed off as usual.
+- **`throwFatals()`** on `PipeManager`, and on `PipeHub` for a hub run on its own. Off by default. With it, a fatal that stops the flow is rethrown out of `sendIt()` (the same `PipeRuleFatal`, its `subject()` the envelope, `getPrevious()` kept) after it is logged, `onFatal()` runs, `then()` is skipped and the log is persisted. A fatal contained to its hub is never thrown.
 - `ClosurePipe`: closures added to a hub are timed, logged and recorded like rules.
 - A test suite on Orchestra Testbench, and a GitHub Actions matrix that runs it on PHP 8.1–8.4 against Laravel 9–13.
 - `Support\LogValue`, which makes every logged value JSON-safe.
@@ -22,13 +24,12 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ### Fixed
 
-- PHP errors such as `TypeError` and `ArgumentCountError` escaped rules, hubs and the manager: only `\Exception` was caught, so they left no `FAIL` result and skipped `onFailure()` and `failureIsFatal()`. Every `Throwable` is now handled, after the fatal, redirect and load-view cases.
+- PHP errors such as `TypeError` and `ArgumentCountError` escaped rules, hubs and the manager: only `\Exception` was caught, so they left no `FAIL` result and bypassed the hub's failure handling. Every `Throwable` is now handled, after the fatal, redirect and load-view cases.
 - A hub given its own container resolved rules from it but called rule methods and closure pipes, and built envelopes, through the global container. Everything in a run now uses the hub's container (and a manager's envelope uses the manager's).
-- A rule bound as a singleton kept one hub's `skipIf()` skip or `stopOnError()` setting in later hubs and runs. The hub now writes its whole per-run policy on every run, separately from the rule's own settings, and `withoutErrorHandling()` lasts for one run.
+- A rule bound as a singleton kept one hub's `skipIf()` skip or error setting in later hubs and runs. The hub now writes its whole per-run policy on every run, separately from the rule's own settings.
 - `pipe_dream_logs.subject_id` was an integer (via `nullableMorphs()`), so UUID and ULID subjects could fail. It is now a nullable string with a composite `subject_type`/`subject_id` index.
 - A rule returning a resource, a recursive object, `INF` or `NAN` made persisting the log throw, which could replace a redirect or the flow's real outcome. Logged values are now made JSON-safe as they are recorded.
 - A closure pipe ignored `$next`, so no pipe after it ever ran. Closures now run and the chain continues.
-- `stopOnFatal()` was stored and never read. See "Changed" for the semantics it now has.
 - `PipeEnvelope::skipAll()` set a flag nothing read. Every remaining pipe, in this hub and every later hub, is now logged as skipped and not executed.
 - `PipeLogger::setLevel()` / `PipeEnvelope::logLevel()` were ignored.
 - `PipeLogger::output()` and `rebuild()` crashed when no strategy was set; they now default to JSON.
@@ -52,18 +53,19 @@ All notable changes to this package are documented here. The format follows [Kee
 - `PipeRuleRedirect::toRoute()` built its URL through the global container. The route is now resolved by the rule, hub or manager it passes through, with the run's container.
 - `$this->fatal()` / `$this->error()` records pointed at `PipeRule.php`. They now point at the rule's own call site, in the message and in the record's `context` (`file`, `line`).
 
-- A `toRoute()` redirect thrown by `onFailure()` left the hub without a URL. The hub resolves it with its own container, and a standalone hub and the manager resolve any redirect on the way out.
+- A `toRoute()` redirect thrown by the hub's failure callback left the hub without a URL. The hub now resolves a redirect from any hook with its own container, and a standalone hub and the manager resolve any redirect on the way out.
 - A container-shared (singleton) rule was executed directly: it kept a reference to its last envelope, could still write to a finished one, and nested or interleaved runs of it shared one subject, policy and container. Hubs now run a copy of each shared rule per run, and a rule lets go of its envelope when it finishes.
 - `PipeEnvelope::get()` and `PipeLogger::recordsByKey()` treated `0`, `'0'` and `''` as "no key"; only `null` does now.
 
 ### Changed
 
 - **Package name.** The package is `keaton-php/pipe-dream` and its namespace is `Keaton\PipeDream`; update your `composer.json` and `use` statements from the old pre-release name.
-- **Fatal semantics.** Previously a fatal always ended the whole flow. Now, without `stopOnFatal()`, a fatal ends the current hub (its remaining pipes and its `then()` do not run), a warning is logged, and the flow continues with the next hub. With `stopOnFatal()` the fatal ends the whole flow and the manager's `then()` does not run. Add `stopOnFatal()` to every hub whose fatals must end the flow, and `throwFatals()` to the manager to catch that fatal around `sendIt()`.
+- **Fatal semantics.** A fatal stops the whole flow by default, as it did before this release: the rest of its hub, every later hub, and both the hub's and the manager's `then()` are skipped. What changed is that a hub can now contain its fatals with `fatalsStopThisHubOnly()`, and that a fatal is quiet by default: `sendIt()` returns the envelope (check `hasFatalErrors()`), and `throwFatals()` rethrows it.
 - A standalone hub (`$hub->sendIt()`) no longer rethrows a fatal by default; it returns the envelope. Use `hasFatalErrors()`, or `throwFatals()` to have it thrown.
-- `failureIsFatal()` is now a flag that works alongside `onFailure()` (it used to replace the `onFailure()` callback). A failure in that hub runs `onFailure()`, logs a fatal and ends the flow.
-- `onFailure()` callbacks can also take the exception, as `$exception`.
+- **Errors.** An `error()` or an unexpected exception in a rule is recorded as `FAIL`, reported to `onError()`, and the next pipe runs. To make errors stop things, use `errorsAreFatal()` on the hub or `$errorsAreFatal` on the rule; there is no longer a way for an error to end a hub without counting as a fatal.
+- Something outside the pipes that fails (a `skipIf()` callback, an event listener, a hook) stops the hub as a fatal wrapping the exception, instead of as a "failure".
 - The hub records a stop as a `warning` (`PipeHub:sendIt`, with `context.ends` = `hub` or `flow`) rather than an `error`, so a fatal on its own no longer makes `hasErrors()` true.
+- `PipeRule`'s constructor is `__construct(?bool $errorsAreFatal = null, ?bool $shouldSkip = null)` (the `$stopOnError` argument is gone).
 - `skipIf()` now logs each skipped rule's reason and fires the `skip` event instead of `before` / `after`; skipped rules no longer fire `beforeEach` / `afterEach`.
 - Per-pipe events are constructed with the envelope and the rule's key (previously the raw subject); hub events with the envelope.
 - `then()` callbacks are no longer rebound to the hub: `$this` inside them is what it was where you wrote them.
@@ -76,5 +78,7 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ### Removed
 
+- `PipeHub::stopOnFatal()` (a fatal now stops the flow unless the hub uses `fatalsStopThisHubOnly()`), `stopOnError()` and `failureIsFatal()` (use `errorsAreFatal()`), `onFailure()` (use `onError()` / `onFatal()`), and their getters `stopsOnFatal()`, `stopsOnError()`, `isFailureFatal()` and `getOnFailure()`.
+- `PipeRule::withoutErrorHandling()`, `$rethrowErrors`, `$stopOnError` and `setStopOnError()`. An exception no longer escapes a rule as a separate "failure" outcome; use `$errorsAreFatal` to make a rule's errors and exceptions fatal.
 - `src/Events/PipeDreamEvent.php` and `PipeDreamEvents.php` (unused, and called methods that do not exist).
 - `PipeEnvelope::load()`, `evaluate()`, `setSkips()`, `setEvents()`, `broadcastEvents()`, `sendBroadcastEventByType()` and the empty destructor; `PipeHub::shouldSkipPipe()` and the empty before-pipeline hook.
