@@ -1,0 +1,198 @@
+<!-- nav-group: Walkthroughs -->
+# A high-volume click intake
+
+A different business, the same pattern. This is the shape of a click-tracking flow of the kind that has handled hundreds of millions of ad clicks: eight stages, every click saved, every click explainable.
+
+## The flow
+
+A controller wraps the click, saves every run, and routes the visitor:
+
+<!-- example: docs/examples/HandleAdClick.php -->
+```php
+<?php
+
+use Illuminate\Http\Request;
+use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
+use Keaton\PipeDream\Exceptions\PipeRuleRedirect;
+use Keaton\PipeDream\PipeEnvelope;
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeManager;
+use Keaton\PipeDream\Strategies\DatabasePersistStrategy;
+
+class HandleAdClick
+{
+    public function __invoke(Request $request)
+    {
+        $click = PipeEnvelope::wrap(new IncomingClick($request))
+            ->persistWith(new DatabasePersistStrategy());
+
+        $started = microtime(true);
+
+        try {
+            PipeManager::create([
+
+                PipeHub::create()
+                    ->name('Validate & start session')
+                    ->description('Is this a complete, signed click for a live campaign?')
+                    ->addPipes([
+                        RequireTrackingParameters::class,
+                        VerifyClickSignature::class,
+                        RecognizeCampaign::class,
+                        StartClickSession::class,
+                    ]),                          // a fatal here (a bad click) ends the whole flow
+
+                PipeHub::create()
+                    ->name('Tracking')
+                    ->description('Attribution cookie and conversion-path tracking')
+                    ->addPipes([
+                        SetAttributionCookie::class,
+                        RecordConversionPath::class,
+                    ]),
+
+                PipeHub::create()
+                    ->name('Geo exclusions')
+                    ->description('Is the visitor somewhere this campaign buys traffic?')
+                    ->addPipes([
+                        ResolveVisitorCountry::class,
+                        EnforceCampaignCountries::class,
+                        EnforceAdvertiserGeoExclusions::class,
+                    ]),
+
+                PipeHub::create()
+                    ->name('Suppression')
+                    ->description('Has this visitor asked the advertiser not to contact them?')
+                    ->addPipes([
+                        CheckAdvertiserSuppressionList::class,
+                    ])
+                    ->skipIf(fn ($click) => $click->campaignSettings()->isNewsletter()),
+
+                PipeHub::create()
+                    ->name('Blacklist & graylist')
+                    ->description('Checks that are never skipped')
+                    ->addPipes([
+                        MatchIpBlacklist::class,
+                        MatchPublisherBlacklist::class,
+                        ChallengeGraylistedPublishers::class,
+                    ])
+                    ->then(fn ($click) => $click->isListed() ? $click->flag('Blacklisted') : null),
+
+                PipeHub::create()
+                    ->name('Bot checks')
+                    ->description('Does this look like a person, not a script or a server?')
+                    ->addPipes([
+                        DetectHostingProviderIp::class,
+                        MatchKnownBotUserAgents::class,
+                        ScoreClickVelocity::class,
+                    ])
+                    ->skipIf(fn ($click) => $click->campaignSettings()->bot_checks_disabled)
+                    ->then(fn ($click) => $click->get('bot_signals') >= 2 ? $click->flag('Two or more bot signals') : null),
+
+                PipeHub::create()
+                    ->name('Fulfillment & caps')
+                    ->description('Daily caps and budget, only for clicks we will pay for')
+                    ->addPipes([
+                        EnforceDailyClickCap::class,
+                        RecordBudgetSpend::class,
+                    ])
+                    ->skipIf(fn ($click) => $click->isFlagged() || $click->isTest())
+                    ->errorsAreFatal()           // a failed charge ends this hub...
+                    ->fatalsStopThisHubOnly(),   // ...but the click is still routed
+
+                PipeHub::create()
+                    ->name('Route')
+                    ->description('Landing page, review queue or a safe dead end')
+                    ->addPipes([
+                        ChooseDestination::class,
+                    ]),
+
+            ])
+                ->name('Ad click intake')
+                ->subject($click)
+                ->persistLogs(false)             // we persist once, below, after the timer
+                ->then(fn ($click) => $click->markComplete())
+                ->sendIt();
+
+        } catch (PipeRuleRedirect $e) {
+            return redirect()->to($e->redirectTo);
+        } catch (PipeRuleLoadView $e) {
+            return view($e->view, $e->data);
+        } finally {
+            $click->logger()->info('Intake', sprintf('Handled in %.1f ms', (microtime(true) - $started) * 1000));
+            $click->persist();                   // one row per click, whatever happened
+        }
+
+        return redirect()->to($click->destination());
+    }
+}
+```
+
+## One click's receipt
+
+A click from a hosting provider's IP, with a bot's user agent:
+
+<!-- example: docs-next/examples/scripts/click-receipt.php -->
+```php
+<?php
+
+use Illuminate\Http\Request;
+use Keaton\PipeDream\Models\PipeDreamLog;
+
+$click = Request::create('/click', 'GET', ['click_id' => 'clk_201', 'campaign' => 'spring-sale', 'pub' => 'pub-12', 'country' => 'US'], [], [], [
+    'REMOTE_ADDR' => '198.51.100.7',
+    'HTTP_USER_AGENT' => 'HeadlessChrome SEO-bot/2.1',
+]);
+
+app(HandleAdClick::class)($click);
+
+echo PipeDreamLog::latest('id')->first()->receipt();
+```
+
+<!-- output: docs-next/examples/scripts/click-receipt.php -->
+```text
+Ad click intake · completed with errors (0.54 ms)
+
+Validate & start session — Is this a complete, signed click for a live campaign?
+  ✓ RequireTrackingParameters      (0.03 ms)
+  ✓ VerifyClickSignature           (0.01 ms)
+  ✓ RecognizeCampaign              (0.05 ms)
+  ✓ StartClickSession              (0.01 ms)
+
+Tracking — Attribution cookie and conversion-path tracking
+  ✓ SetAttributionCookie           (0.01 ms)
+  ✓ RecordConversionPath           (0.01 ms)
+
+Geo exclusions — Is the visitor somewhere this campaign buys traffic?
+  ✓ ResolveVisitorCountry          (0.01 ms)  Visitor is in US
+  ✓ EnforceCampaignCountries       (0.01 ms)
+  ✓ EnforceAdvertiserGeoExclusions (0.02 ms)
+
+Suppression — Has this visitor asked the advertiser not to contact them?
+  ✓ CheckAdvertiserSuppressionList (0.04 ms)
+
+Blacklist & graylist — Checks that are never skipped
+  ✓ MatchIpBlacklist               (0.01 ms)
+  ✓ MatchPublisherBlacklist        (0.01 ms)
+  ✓ ChallengeGraylistedPublishers  (0.01 ms)
+
+Bot checks — Does this look like a person, not a script or a server?
+  ✗ DetectHostingProviderIp        (0.02 ms)  198.51.100.7 belongs to a hosting provider
+  ✗ MatchKnownBotUserAgents        (0.01 ms)  User agent looks like a bot
+  ✓ ScoreClickVelocity             (0.01 ms)
+
+Fulfillment & caps — Daily caps and budget, only for clicks we will pay for · skipped: Skipped: the hub's skipIf() returned true
+  ↷ EnforceDailyClickCap           skipped
+  ↷ RecordBudgetSpend              skipped
+
+Route — Landing page, review queue or a safe dead end
+  ✓ ChooseDestination              (0.01 ms)
+```
+
+Two bot signals flagged the click, so the Fulfillment stage was skipped: the advertiser was never charged for it, and the click was routed anyway. Every stage is on the receipt, including the checks that passed. That proves they ran.
+
+## What's different from checkout
+
+- **Volume.** Each click is one request and one saved row. The flow itself adds a fraction of a millisecond.
+- **Containment.** Fulfillment uses `errorsAreFatal()->fatalsStopThisHubOnly()`: a failed budget charge ends that stage, but the visitor is still routed. Checkout makes the opposite choice for Charge, and both are one readable line.
+- **Never-skipped checks.** The blacklist stage has no `skipIf()`, and its description says so.
+
+**Next:** [Outcome tables](18-outcome-tables.md).
