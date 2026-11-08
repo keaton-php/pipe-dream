@@ -143,6 +143,6 @@ composer require keaton-php/pipe-dream
 
 PHP 8.1+, Laravel 9–13. The service provider is auto-discovered.
 
-**→ [Build your first flow in five minutes](https://kevineaton.dev/docs/pipe-dream/quickstart/)** · [Docs](https://kevineaton.dev/docs/pipe-dream/) · [The story behind it](https://kevineaton.dev/writing/pipe-driven-development/)
+**→ [Build your first flow in five minutes](https://kevineaton.dev/docs/pipe-dream/your-first-flow/)** · [Docs](https://kevineaton.dev/docs/pipe-dream/) · [The story behind it](https://kevineaton.dev/writing/pipe-driven-development/)
 
 MIT licensed. Built by [Kevin Eaton](https://kevineaton.dev).
