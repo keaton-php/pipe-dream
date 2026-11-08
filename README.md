@@ -1,7 +1,7 @@
 # Pipe Dream
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/keaton-php/pipe-dream.svg?style=flat-square)](https://packagist.org/packages/keaton-php/pipe-dream)
-[![Tests](https://img.shields.io/github/actions/workflow/status/keaton-php/pipe-dream/tests.yml?branch=1.x&label=tests&style=flat-square)](https://github.com/keaton-php/pipe-dream/actions/workflows/tests.yml)
+[![Tests](https://github.com/keaton-php/pipe-dream/actions/workflows/tests.yml/badge.svg?branch=1.x)](https://github.com/keaton-php/pipe-dream/actions/workflows/tests.yml)
 [![PHP Version](https://img.shields.io/packagist/dependency-v/keaton-php/pipe-dream/php?style=flat-square)](https://packagist.org/packages/keaton-php/pipe-dream)
 [![Total Downloads](https://img.shields.io/packagist/dt/keaton-php/pipe-dream.svg?style=flat-square)](https://packagist.org/packages/keaton-php/pipe-dream)
 [![License](https://img.shields.io/packagist/l/keaton-php/pipe-dream.svg?style=flat-square)](LICENSE)
