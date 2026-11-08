@@ -17,7 +17,7 @@ composer test
 
 The suite uses Orchestra Testbench and runs its database tests on in-memory SQLite, so you need no database set up. CI runs it on PHP 8.1 to 8.5 against Laravel 9 to 13.
 
-Every PHP block in the README is a complete file in `docs/examples/`, and `tests/Feature/ReadmeExamplesTest.php` runs each one and checks the output the README shows. **If you change behaviour, change the example and the README text together**, or that test will tell you they have drifted.
+Every PHP block in the README and in the docs pages (`docs/*.md`) is a complete file in `docs/examples/`. `tests/Feature/ReadmeExamplesTest.php` and `tests/Feature/DocsExamplesTest.php` run each one and check the output the page shows. **If you change behaviour, change the example and the page text together**, or those tests will tell you they have drifted.
 
 ## What a good pull request has
 
