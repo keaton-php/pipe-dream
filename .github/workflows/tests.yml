@@ -74,7 +74,7 @@ jobs:
       - name: Install dependencies
         run: |
           composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --dev --no-interaction --no-update
-          composer update --prefer-dist --prefer-stable --no-interaction --no-progress --with-all-dependencies
+          composer update --prefer-dist --prefer-stable --no-interaction --no-progress --with-all-dependencies --no-audit
 
       - name: Run the test suite
         run: vendor/bin/phpunit
@@ -97,7 +97,7 @@ jobs:
       - name: Install lowest dependencies
         run: |
           composer require "laravel/framework:11.*" "orchestra/testbench:9.*" --dev --no-interaction --no-update
-          composer update --prefer-dist --prefer-lowest --no-interaction --no-progress --with-all-dependencies
+          composer update --prefer-dist --prefer-lowest --no-interaction --no-progress --with-all-dependencies --no-audit
 
       - name: Run the test suite
         run: vendor/bin/phpunit
