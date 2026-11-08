@@ -3,7 +3,24 @@
     "description": "Pipe-driven development for Laravel: business flows that read like a table of contents, with every step logged, timed and explainable.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["laravel", "pipeline", "workflow", "rules", "audit-log"],
+    "keywords": [
+        "laravel",
+        "pipeline",
+        "pipe",
+        "workflow",
+        "flow",
+        "rules",
+        "audit-log",
+        "logging",
+        "business-rules",
+        "keaton-php"
+    ],
+    "homepage": "https://github.com/keaton-php/pipe-dream",
+    "support": {
+        "issues": "https://github.com/keaton-php/pipe-dream/issues",
+        "source": "https://github.com/keaton-php/pipe-dream",
+        "security": "https://github.com/keaton-php/pipe-dream/security/policy"
+    },
     "authors": [
         {
             "name": "Kevin Eaton",

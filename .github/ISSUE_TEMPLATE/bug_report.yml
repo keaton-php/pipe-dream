@@ -1,0 +1,44 @@
+name: Bug report
+description: Something does not behave the way the README says it does.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The most useful report is a complete PHP file (like the ones in `docs/examples/`) that prints something different from what you expected.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Code that reproduces it
+      description: The smallest complete script you can. Remove anything private.
+      render: php
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: php
+    attributes:
+      label: PHP version
+      placeholder: "8.4.1"
+    validations:
+      required: true
+
+  - type: input
+    id: laravel
+    attributes:
+      label: Laravel version
+      placeholder: "12.4.0"
+    validations:
+      required: true
