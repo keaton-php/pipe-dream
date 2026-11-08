@@ -57,6 +57,7 @@ class DocsExamplesTest extends TestCase
         return $cases;
     }
 
+    /** @dataProvider outputs */
     #[\PHPUnit\Framework\Attributes\DataProvider('outputs')]
     public function test_every_output_shown_is_what_its_script_prints(string $script, string $shown): void
     {
