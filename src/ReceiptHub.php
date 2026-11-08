@@ -42,11 +42,14 @@ class ReceiptHub
     }
 
     /**
-     * Whether the whole hub was skipped with skip(): nothing in it ran.
+     * Whether the hub was skipped: either skip() skipped the whole hub, or
+     * every rule in it was skipped (as skipIf() does). False for a hub that
+     * ran even one rule.
      */
     public function wasSkipped(): bool
     {
-        return $this->skipped;
+        return $this->skipped
+            || ($this->steps->isNotEmpty() && ! $this->steps->contains(fn (StepRecord $step) => ! $step->wasSkipped()));
     }
 
     /**

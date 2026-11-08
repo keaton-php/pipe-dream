@@ -37,7 +37,7 @@ class ReceiptTest extends TestCase
         $this->assertSame(['Check', 'Optional', 'Finish'], $receipt->hubs()->map->name()->all());
         $this->assertSame(['Look it over', null, null], $receipt->hubs()->map->description()->all());
         $this->assertSame([['FirstRule', 'ErrorRule'], [], ['SecondRule']], $receipt->hubs()->map(fn ($hub) => $hub->steps()->map->name()->all())->all());
-        $this->assertSame([false, true, false], $receipt->hubs()->map->wasSkipped()->all());
+        $this->assertSame([false, true, true], $receipt->hubs()->map->wasSkipped()->all());
         $this->assertSame([null, null, 'Nothing to finish'], $receipt->hubs()->map->skipReason()->all());
     }
 
