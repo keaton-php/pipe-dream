@@ -12,6 +12,7 @@
         </testsuite>
         <testsuite name="Docs">
             <directory>docs/examples/testing</directory>
+            <directory>docs-next/examples/testing</directory>
         </testsuite>
     </testsuites>
     <php>
