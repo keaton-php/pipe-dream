@@ -220,6 +220,7 @@ class PipeManager
                 $subject->logger()->fatal('PipeManager:sendIt', 'The flow cannot carry on: '.$e->getMessage(), ['exception' => get_class($e)] + $this->getPipeManagerContext());
 
                 $fatal = new PipeRuleFatal($e->getMessage(), $subject, 0, $e);
+                $subject->markFatalRecorded($fatal);
             }
 
             if ($completed) {
@@ -260,6 +261,7 @@ class PipeManager
         } catch (PipeRuleLoadView|PipeHubException $e) {
             throw $e;
         } catch (PipeRuleFatal $e) {
+            $subject->markFatalRecorded($e);
             $subject->logger()->fatal('PipeManager:then', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeManagerContext());
             $subject->logger()->warning('PipeManager:sendIt', 'Flow stopped by a fatal: '.$e->getMessage(), $this->getPipeManagerContext());
 
@@ -278,9 +280,12 @@ class PipeManager
                     // The error hook itself failed: the flow cannot finish cleanly.
                     $subject->logger()->fatal('PipeManager:sendIt', 'The flow cannot carry on: '.$hookFailure->getMessage(), ['exception' => get_class($hookFailure)] + $this->getPipeManagerContext());
 
-                    return $hookFailure instanceof PipeRuleFatal
+                    $fatal = $hookFailure instanceof PipeRuleFatal
                         ? $hookFailure
                         : new PipeRuleFatal($hookFailure->getMessage(), $subject, 0, $hookFailure);
+                    $subject->markFatalRecorded($fatal);
+
+                    return $fatal;
                 }
             }
         }
