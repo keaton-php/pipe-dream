@@ -79,7 +79,99 @@ Hello, Pipe Dream
 
 No `$next` to call and nothing to return: the hub moves on to the next pipe by itself.
 
-## Why that's better
+Same three steps, same result. So far the plain pipeline has done everything the hub did.
+
+## Now ask it what happened
+
+Here is the difference. A plain pipeline hands you the final value and nothing else: if the title came out wrong, you are left guessing which step broke it. The hub kept notes. Ask it what happened:
+
+<!-- example: docs/examples/scripts/hub-log.php -->
+```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+
+$post = (object) ['title' => '  hello,   PIPE dream  '];
+
+$envelope = PipeHub::create()
+    ->addPipes([
+        fn ($post) => $post->title = trim($post->title),
+        fn ($post) => $post->title = preg_replace('/\s+/', ' ', $post->title),
+        fn ($post) => $post->title = ucwords(strtolower($post->title)),
+    ])
+    ->sendIt($post);
+
+foreach ($envelope->logs() as $record) {
+    printf("%-11s %-24s %s\n", $record['type'], $record['key'], $record['data']);
+}
+```
+
+<!-- output: docs/examples/scripts/hub-log.php -->
+```text
+info        PipeHub:sendIt           Sending subject through all pipes
+timerStart  Closure@hub-log.php:9    Executing rule Closure@hub-log.php:9
+returnValue Closure@hub-log.php:9    hello,   PIPE dream
+timerEnd    Closure@hub-log.php:9    Finished executing rule Closure@hub-log.php:9
+timerStart  Closure@hub-log.php:10   Executing rule Closure@hub-log.php:10
+returnValue Closure@hub-log.php:10   hello, PIPE dream
+timerEnd    Closure@hub-log.php:10   Finished executing rule Closure@hub-log.php:10
+timerStart  Closure@hub-log.php:11   Executing rule Closure@hub-log.php:11
+returnValue Closure@hub-log.php:11   Hello, Pipe Dream
+timerEnd    Closure@hub-log.php:11   Finished executing rule Closure@hub-log.php:11
+info        PipeHub:sendIt           Finalized result!
+```
+
+Every pipe was timed, and what each one returned was recorded. You can see exactly where `hello,   PIPE dream` became `Hello, Pipe Dream`, without adding a single line of logging to your code. `$envelope->results()` holds the same results, ready to check in code.
+
+Now break it on purpose. Change the second step so it eats every space, and run the hub again:
+
+<!-- example: docs/examples/scripts/hub-log-broken.php -->
+```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+
+$post = (object) ['title' => '  hello,   PIPE dream  '];
+
+$envelope = PipeHub::create()
+    ->addPipes([
+        fn ($post) => $post->title = trim($post->title),
+        fn ($post) => $post->title = preg_replace('/\s+/', '', $post->title), // oops: '' instead of ' '
+        fn ($post) => $post->title = ucwords(strtolower($post->title)),
+    ])
+    ->sendIt($post);
+
+foreach ($envelope->logs() as $record) {
+    if ($record['type'] === 'returnValue') {
+        printf("%-30s %s\n", $record['key'], $record['data']);
+    }
+}
+```
+
+<!-- output: docs/examples/scripts/hub-log-broken.php -->
+```text
+Closure@hub-log-broken.php:9   hello,   PIPE dream
+Closure@hub-log-broken.php:10  hello,PIPEdream
+Closure@hub-log-broken.php:11  Hello,pipedream
+```
+
+You don't have to guess which step ate the spaces. The log already points at the second one: it's the first line where they're gone.
+
+That's the whole difference. A pipeline tells you the answer. A hub hands you the receipt.
+
+And that's only the start. Once every step is a named, recorded thing, a lot more opens up:
+
+- **Rules as classes:** each pipe becomes a small, testable class with a name, so the log reads like a description of your business.
+- **Stacked hubs:** group steps into stages and run the stages as one flow, with one log.
+- **Control flow:** skip a step, stop a flow early, redirect, or catch a failure without losing the log.
+- **Saved runs:** store every log and query it later: which runs hit problems, and exactly where.
+- **A flow you can draw:** read a flow back and render it as a page, then watch real traffic move through it.
+
+All of it builds on what you just saw. The docs pick it up from here.
+
+## Guess what else you can do?
+
+A few more things the hub gives you for free.
 
 ### The subject travels in an envelope
 
@@ -144,48 +236,6 @@ echo $envelope->get('state'), ': ', $post->title;
 ```text
 in review: Hello, Pipe Dream
 ```
-
-### Every step is logged
-
-Every pipe is timed, and what it returns is recorded. Here is the whole log of the hub from before:
-
-<!-- example: docs/examples/scripts/log.php -->
-```php
-<?php
-
-use Keaton\PipeDream\PipeHub;
-
-$post = (object) ['title' => '  hello,   PIPE dream  '];
-
-$envelope = PipeHub::create()
-    ->addPipes([
-        fn ($post) => $post->title = trim($post->title),
-        fn ($post) => $post->title = preg_replace('/\s+/', ' ', $post->title),
-        fn ($post) => $post->title = ucwords(strtolower($post->title)),
-    ])
-    ->sendIt($post);
-
-foreach ($envelope->logs() as $record) {
-    printf("%-11s %-19s %s\n", $record['type'], $record['key'], $record['data']);
-}
-```
-
-<!-- output: docs/examples/scripts/log.php -->
-```text
-info        PipeHub:sendIt      Sending subject through all pipes
-timerStart  Closure@log.php:9   Executing rule Closure@log.php:9
-returnValue Closure@log.php:9   hello,   PIPE dream
-timerEnd    Closure@log.php:9   Finished executing rule Closure@log.php:9
-timerStart  Closure@log.php:10  Executing rule Closure@log.php:10
-returnValue Closure@log.php:10  hello, PIPE dream
-timerEnd    Closure@log.php:10  Finished executing rule Closure@log.php:10
-timerStart  Closure@log.php:11  Executing rule Closure@log.php:11
-returnValue Closure@log.php:11  Hello, Pipe Dream
-timerEnd    Closure@log.php:11  Finished executing rule Closure@log.php:11
-info        PipeHub:sendIt      Finalized result!
-```
-
-You can see each step's result without adding a single line of logging. `$envelope->results()` holds the same results, ready to check.
 
 ## Stack hubs into a PipeManager
 
