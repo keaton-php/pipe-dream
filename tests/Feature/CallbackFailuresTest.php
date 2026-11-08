@@ -63,6 +63,20 @@ class CallbackFailuresTest extends TestCase
         $this->assertTrue($envelope->hasFatalErrors());
     }
 
+    public function test_a_second_distinct_fatal_is_recorded_even_when_another_is_already_on_the_log(): void
+    {
+        $envelope = PipeHub::create()
+            ->skipIf(function ($subject) {
+                $subject->logger()->fatal('Elsewhere', 'an earlier, separate fatal');
+
+                throw new PipeRuleFatal('skipIf gave up');
+            })
+            ->addPipe(fn () => Journal::record('p1'))
+            ->sendIt(new stdClass());
+
+        $this->assertSame(['an earlier, separate fatal', 'skipIf gave up'], $envelope->logger()->fatals()->pluck('data')->values()->all());
+    }
+
     public function test_a_fatal_from_a_rule_is_recorded_once(): void
     {
         $envelope = PipeHub::create()

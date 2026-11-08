@@ -255,7 +255,7 @@ abstract class PipeRule
             $this->logExecutionResult($this->subject, $this->ruleKey(), self::FATAL_FAIL);
             $this->registerException($e, self::FATAL);
 
-            throw $e;
+            throw $e->markRecorded();
         } catch (PipeRuleRedirect $e) {
             throw $e->resolveRoute($this->container());
         } catch (PipeRuleLoadView|PipeHubException $e) {
@@ -294,7 +294,8 @@ abstract class PipeRule
 
             // getCode() is not always an int (PDOException), and an Exception code must be.
             throw (new PipeRuleFatal($e->getMessage(), $this->subject, is_int($e->getCode()) ? $e->getCode() : 0, $e))
-                ->setOrigin($file, $line);
+                ->setOrigin($file, $line)
+                ->markRecorded();
         }
 
         $this->logExecutionResult($this->subject, $this->ruleKey(), self::FAIL);

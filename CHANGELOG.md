@@ -26,7 +26,7 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ### Fixed
 
-- A `PipeRuleFatal` thrown from `skipIf()` or an event listener stopped the hub but left no fatal on the log, so `hasFatalErrors()` was false and the stored `has_fatals` was false. It is now recorded as a fatal, once.
+- A `PipeRuleFatal` thrown from `skipIf()` or an event listener stopped the hub but left no fatal on the log, so `hasFatalErrors()` was false and the stored `has_fatals` was false. It is now recorded as a fatal, once (tracked per exception, so a rule's own fatal is never logged twice and a distinct one is never dropped).
 - An exception from a listener of a skipped hub's `skip` event escaped the hub; it now stops the hub like any other failure outside the pipes.
 - Method calls on the envelope now reach a subject's `__call()` (an Eloquent scope, a forwarded query method); before, only methods the subject declared were forwarded.
 - PHP errors such as `TypeError` and `ArgumentCountError` escaped rules, hubs and the manager: only `\Exception` was caught, so they left no `FAIL` result and bypassed the hub's failure handling. Every `Throwable` is now handled, after the fatal, redirect and load-view cases.
