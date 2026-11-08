@@ -7,7 +7,7 @@ A flow returns its receipt, so a test runs the flow and asserts on what the rece
 
 Build the flow in one place ([`CheckoutFlow`](06-flows.md#keep-the-flow-in-a-class)) and use it in every test:
 
-<!-- example: docs-next/examples/testing/CheckoutFlowTest.php -->
+<!-- example: docs/examples/testing/CheckoutFlowTest.php -->
 ```php
 <?php
 

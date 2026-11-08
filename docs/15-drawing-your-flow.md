@@ -5,7 +5,7 @@ A flow can be read back without running it, so a page that documents or draws it
 
 ## Read it back
 
-<!-- example: docs-next/examples/scripts/drawing.php -->
+<!-- example: docs/examples/scripts/drawing.php -->
 ```php
 <?php
 
@@ -24,7 +24,7 @@ echo collect($flow->getHubs())
     ->implode(PHP_EOL);
 ```
 
-<!-- output: docs-next/examples/scripts/drawing.php -->
+<!-- output: docs/examples/scripts/drawing.php -->
 ```text
 Checkout
   Validate the order: Is this a complete order for items we can actually ship? (4 rules)
@@ -43,8 +43,8 @@ Checkout
 
 The click-intake demo renders its flow page from the flow definition, and its dashboard from saved runs, with nothing written by hand:
 
-![The flow, rendered from its code](../docs/01-flow.png)
+![The flow, rendered from its code](01-flow.png)
 
-![A dashboard built from saved runs](../docs/02-dashboard.png)
+![A dashboard built from saved runs](02-dashboard.png)
 
 **Next:** [A full checkout](16-checkout-walkthrough.md).

@@ -1,1 +1,0 @@
-../../../docs/examples/scripts/checkout-trusted.php

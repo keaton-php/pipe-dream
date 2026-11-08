@@ -7,7 +7,7 @@ A hub can dispatch your Laravel events as it runs, for metrics, websockets or an
 
 Hub events are constructed with the envelope; per-rule events with the envelope and the rule's class:
 
-<!-- example: docs-next/examples/ChargeSkipped.php -->
+<!-- example: docs/examples/ChargeSkipped.php -->
 ```php
 <?php
 
@@ -19,7 +19,7 @@ class ChargeSkipped
 }
 ```
 
-<!-- example: docs-next/examples/PaymentStepFinished.php -->
+<!-- example: docs/examples/PaymentStepFinished.php -->
 ```php
 <?php
 
@@ -33,7 +33,7 @@ class PaymentStepFinished
 
 ## Name them on the hub
 
-<!-- example: docs-next/examples/scripts/events.php -->
+<!-- example: docs/examples/scripts/events.php -->
 ```php
 <?php
 
@@ -69,7 +69,7 @@ $chargeHub()->sendIt($held);
 $chargeHub()->sendIt(new Order(id: 'ord_48214', items: [], shippingAddress: '500 Congress Ave, Austin', shippingCountry: 'US', billingCountry: 'US'));
 ```
 
-<!-- output: docs-next/examples/scripts/events.php -->
+<!-- output: docs/examples/scripts/events.php -->
 ```text
 Charge skipped for ord_48213
 AuthorizePayment finished for ord_48214

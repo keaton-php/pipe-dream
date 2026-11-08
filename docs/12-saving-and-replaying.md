@@ -7,7 +7,7 @@ Save every run, and any order's receipt comes back whole, weeks later: the answe
 
 Run the migration from [Installation](02-installation.md), then bind the database strategy once, in a service provider. Every flow saves itself from then on, one row per run:
 
-<!-- example: docs-next/examples/scripts/save-and-replay.php -->
+<!-- example: docs/examples/scripts/save-and-replay.php -->
 ```php
 <?php
 
@@ -38,7 +38,7 @@ $runId = CheckoutFlow::build()->subject($order)->sendIt()->runId();
 echo PipeDreamLog::forRun($runId)->first()->receipt();
 ```
 
-<!-- output: docs-next/examples/scripts/save-and-replay.php -->
+<!-- output: docs/examples/scripts/save-and-replay.php -->
 ```text
 Checkout · On hold: Two or more fraud signals (0.27 ms)
 

@@ -59,7 +59,7 @@ A fatal stops the whole flow by default. Two hub settings change how far a failu
 
 The checkout's Charge stage uses `errorsAreFatal()`: if authorizing the card fails for any reason, the order must not go on to Fulfil. A stopped flow's later stages never run, so they aren't on the receipt, and the flow's `then()` doesn't run either:
 
-<!-- output: docs-next/examples/scripts/checkout-out-of-stock.php -->
+<!-- output: docs/examples/scripts/checkout-out-of-stock.php -->
 ```text
 Checkout · stopped (0.22 ms)
 

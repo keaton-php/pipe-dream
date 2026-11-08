@@ -3,23 +3,30 @@
 use Illuminate\Support\Facades\Event;
 use Keaton\PipeDream\PipeHub;
 
-$fired = [];
+Event::listen(ChargeSkipped::class, fn ($event) => print("Charge skipped for {$event->order->id}\n"));
+Event::listen(PaymentStepFinished::class, fn ($event) => print("{$event->rule} finished for {$event->order->id}\n"));
 
-Event::listen(
-    [BotChecksStarted::class, BotChecksFinished::class, BotChecksSkipped::class, RuleStarting::class, RuleFinished::class],
-    function ($event) use (&$fired) {
-        $fired[] = class_basename($event).(isset($event->rule) ? '('.class_basename($event->rule).')' : '');
-    }
+$chargeHub = fn () => PipeHub::create()
+    ->name('Charge')
+    ->addPipes([AuthorizePayment::class, CapturePayment::class])
+    ->skipIf(fn ($order) => $order->isOnHold() ? "Held for review: {$order->holdReason}" : null)
+    ->broadcastEventOnSkip(ChargeSkipped::class)
+    ->broadcastEventAfterEachPipe(PaymentStepFinished::class);
+
+$held = new Order(
+    id: 'ord_48213',
+    items: [
+        ['sku' => 'tee-blk-m', 'name' => 'Black tee', 'price' => 30.00],
+        ['sku' => 'hoodie-gry-l', 'name' => 'Grey hoodie', 'price' => 65.00],
+        ['sku' => 'cap-nvy', 'name' => 'Navy cap', 'price' => 25.00],
+    ],
+    shippingAddress: 'Keizersgracht 123, Amsterdam',
+    shippingCountry: 'NL',
+    billingCountry: 'US',
+    discountCode: 'SPRING20',
+    cardsTriedRecently: 4,
 );
+$held->holdForReview('Two or more fraud signals');
 
-PipeHub::create()
-    ->name('Bot checks')
-    ->addPipes([DetectHostingProviderIp::class, MatchKnownBotUserAgents::class])
-    ->broadcastEventBefore(BotChecksStarted::class)          // before the first rule
-    ->broadcastEventAfter(BotChecksFinished::class)          // after the last rule, before then()
-    ->broadcastEventOnSkip(BotChecksSkipped::class)          // instead of both, when the hub is skipped
-    ->broadcastEventBeforeEachPipe(RuleStarting::class)      // just before each rule runs
-    ->broadcastEventAfterEachPipe(RuleFinished::class)       // as each rule hands off to the next
-    ->sendIt((object) ['id' => 'clk_134', 'ip' => '203.0.113.9', 'userAgent' => 'Mozilla/5.0']);
-
-implode(', ', $fired);   // 'BotChecksStarted, RuleStarting(DetectHostingProviderIp), RuleFinished(DetectHostingProviderIp), RuleStarting(MatchKnownBotUserAgents), RuleFinished(MatchKnownBotUserAgents), BotChecksFinished'
+$chargeHub()->sendIt($held);
+$chargeHub()->sendIt(new Order(id: 'ord_48214', items: [], shippingAddress: '500 Congress Ave, Austin', shippingCountry: 'US', billingCountry: 'US'));

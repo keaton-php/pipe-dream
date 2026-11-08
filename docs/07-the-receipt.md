@@ -23,7 +23,7 @@ Pass a format to `format()` to get the output back, or to `print()` to echo it.
 
 The held order, ready to paste into a support ticket:
 
-<!-- example: docs-next/examples/scripts/receipt-markdown.php -->
+<!-- example: docs/examples/scripts/receipt-markdown.php -->
 ```php
 <?php
 
@@ -48,7 +48,7 @@ $envelope = CheckoutFlow::build()->subject($order)->sendIt();
 echo $envelope->receipt()->format(new MarkdownFormat(times: false));
 ```
 
-<!-- output: docs-next/examples/scripts/receipt-markdown.php -->
+<!-- output: docs/examples/scripts/receipt-markdown.php -->
 ```markdown
 **Checkout** · On hold: Two or more fraud signals
 
@@ -87,7 +87,7 @@ echo $envelope->receipt()->format(new MarkdownFormat(times: false));
 
 The same receipt as data, for an API. Here's its fraud screen:
 
-<!-- example: docs-next/examples/scripts/receipt-array.php -->
+<!-- example: docs/examples/scripts/receipt-array.php -->
 ```php
 <?php
 
@@ -114,7 +114,7 @@ $receipt = $envelope->receipt()->format(new ArrayFormat);
 echo json_encode($receipt['hubs'][1], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 ```
 
-<!-- output: docs-next/examples/scripts/receipt-array.php -->
+<!-- output: docs/examples/scripts/receipt-array.php -->
 ```json
 {
     "name": "Fraud screen",
@@ -159,7 +159,7 @@ echo json_encode($receipt['hubs'][1], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
 
 `origins: true` adds the file and line each error or fatal was raised on, for the engineer reading the receipt:
 
-<!-- example: docs-next/examples/scripts/receipt-origins.php -->
+<!-- example: docs/examples/scripts/receipt-origins.php -->
 ```php
 <?php
 
@@ -181,7 +181,7 @@ $envelope = CheckoutFlow::build()->subject($order)->sendIt();
 echo $envelope->receipt()->format(new ConsoleFormat(times: false, origins: true));
 ```
 
-<!-- output: docs-next/examples/scripts/receipt-origins.php -->
+<!-- output: docs/examples/scripts/receipt-origins.php -->
 ```text
 Checkout · stopped
 
@@ -205,7 +205,7 @@ The summary is recorded when the run ends, so a saved run prints the same header
 
 A receipt is also something you can query in code:
 
-<!-- example: docs-next/examples/scripts/receipt-questions.php -->
+<!-- example: docs/examples/scripts/receipt-questions.php -->
 ```php
 <?php
 
@@ -231,7 +231,7 @@ echo $receipt->steps()->first(fn ($step) => $step->hasErrors())->name(), PHP_EOL
 echo $receipt->hubs()->filter->skipReason()->map->name()->implode(', '), PHP_EOL;  // what never ran
 ```
 
-<!-- output: docs-next/examples/scripts/receipt-questions.php -->
+<!-- output: docs/examples/scripts/receipt-questions.php -->
 ```text
 completed with errors
 On hold: Two or more fraud signals
@@ -245,7 +245,7 @@ Charge, Fulfil
 
 A format is one method, `format(Receipt $receipt): mixed`. This one squeezes a run into one line, for a log or a Slack alert:
 
-<!-- example: docs-next/examples/OneLineFormat.php -->
+<!-- example: docs/examples/OneLineFormat.php -->
 ```php
 <?php
 

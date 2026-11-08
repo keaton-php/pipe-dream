@@ -7,7 +7,7 @@ A hub is one named stage of a flow: a list of rules, run in order, plus how the 
 
 The checkout's fraud screen, run by itself:
 
-<!-- example: docs-next/examples/scripts/hub-alone.php -->
+<!-- example: docs/examples/scripts/hub-alone.php -->
 ```php
 <?php
 
@@ -42,7 +42,7 @@ $envelope = PipeHub::create()
 echo $envelope->receipt();
 ```
 
-<!-- output: docs-next/examples/scripts/hub-alone.php -->
+<!-- output: docs/examples/scripts/hub-alone.php -->
 ```text
 Fraud screen · On hold: Two or more fraud signals (0.07 ms)
 

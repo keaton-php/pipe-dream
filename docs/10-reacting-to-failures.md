@@ -16,7 +16,7 @@ A hub's hook hears about its own rules. A manager's hears about every hub's, aft
 
 Put the hook on the flow so it fires once, when the whole flow stops. Inside it, write what you did to the log, so the alert is part of the saved run:
 
-<!-- example: docs-next/examples/scripts/on-fatal.php -->
+<!-- example: docs/examples/scripts/on-fatal.php -->
 ```php
 <?php
 
@@ -39,7 +39,7 @@ $envelope = CheckoutFlow::build()
 echo $envelope->logger()->infos()->firstWhere('key', 'Alert')['data'];
 ```
 
-<!-- output: docs-next/examples/scripts/on-fatal.php -->
+<!-- output: docs/examples/scripts/on-fatal.php -->
 ```text
 Told #merchandising: Out of stock: Limited-run poster
 ```

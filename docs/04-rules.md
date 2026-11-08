@@ -38,7 +38,7 @@ class CheckCardVelocity extends PipeRule
 
 A rule doesn't need the rest of the flow. Put it in a hub by itself and send an order through it:
 
-<!-- example: docs-next/examples/scripts/rule-alone.php -->
+<!-- example: docs/examples/scripts/rule-alone.php -->
 ```php
 <?php
 
@@ -60,7 +60,7 @@ $envelope = PipeHub::create()
 echo $envelope->receipt();
 ```
 
-<!-- output: docs-next/examples/scripts/rule-alone.php -->
+<!-- output: docs/examples/scripts/rule-alone.php -->
 ```text
 Run · completed with errors (0.04 ms)
 

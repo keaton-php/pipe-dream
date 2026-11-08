@@ -130,7 +130,7 @@ class HandleAdClick
 
 A click from a hosting provider's IP, with a bot's user agent:
 
-<!-- example: docs-next/examples/scripts/click-receipt.php -->
+<!-- example: docs/examples/scripts/click-receipt.php -->
 ```php
 <?php
 
@@ -147,7 +147,7 @@ app(HandleAdClick::class)($click);
 echo PipeDreamLog::latest('id')->first()->receipt();
 ```
 
-<!-- output: docs-next/examples/scripts/click-receipt.php -->
+<!-- output: docs/examples/scripts/click-receipt.php -->
 ```text
 Ad click intake · completed with errors (0.54 ms)
 

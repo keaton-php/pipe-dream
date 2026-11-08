@@ -49,8 +49,7 @@
             "Keaton\\PipeDream\\Tests\\": "tests/"
         },
         "classmap": [
-            "docs/examples/",
-            "docs-next/examples/"
+            "docs/examples/"
         ]
     },
     "scripts": {

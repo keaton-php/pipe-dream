@@ -1,7 +1,7 @@
 <!-- nav-group: Start here -->
 # Your first flow
 
-Build the checkout from the [introduction](01-introduction.md), send three orders through it, and read what each one did. About ten minutes.
+Build the checkout from the [introduction](index.md), send three orders through it, and read what each one did. About ten minutes.
 
 ## 1. The thing that flows
 
@@ -55,7 +55,7 @@ class ConfirmItemsInStock extends PipeRule
 
 Group rules into named **hubs** (the stages) and stack the hubs in a **manager** (the flow). How each stage behaves is written on the stage itself: `skipIf()` to skip it, `then()` to act once it's done, `errorsAreFatal()` to make any failure stop the flow.
 
-<!-- example: docs-next/examples/scripts/checkout.php -->
+<!-- example: docs/examples/scripts/checkout.php -->
 ```php
 <?php
 
@@ -118,7 +118,7 @@ $envelope = PipeManager::create([
 
 Send a suspicious order through (a US card shipping to the Netherlands, after four cards were tried in ten minutes) and echo its receipt:
 
-<!-- example: docs-next/examples/scripts/checkout-held.php -->
+<!-- example: docs/examples/scripts/checkout-held.php -->
 ```php
 <?php
 
@@ -140,7 +140,7 @@ require __DIR__.'/checkout.php';
 echo $envelope->receipt();
 ```
 
-<!-- output: docs-next/examples/scripts/checkout-held.php -->
+<!-- output: docs/examples/scripts/checkout-held.php -->
 ```text
 Checkout · On hold: Two or more fraud signals (2.62 ms)
 
@@ -171,7 +171,7 @@ Read it top to bottom: the fraud screen raised two concerns, its `then()` put th
 
 A trusted customer's order skips the fraud screen and goes all the way through:
 
-<!-- output: docs-next/examples/scripts/checkout-trusted.php -->
+<!-- output: docs/examples/scripts/checkout-trusted.php -->
 ```text
 Checkout · Placed (0.28 ms)
 
@@ -198,7 +198,7 @@ Fulfil — Reserve stock, tell the warehouse, email the receipt
 
 An order with something out of stock stops at the first stage. Nothing after the fatal runs, so the later stages don't appear at all:
 
-<!-- output: docs-next/examples/scripts/checkout-out-of-stock.php -->
+<!-- output: docs/examples/scripts/checkout-out-of-stock.php -->
 ```text
 Checkout · stopped (0.22 ms)
 

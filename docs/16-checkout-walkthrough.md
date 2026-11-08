@@ -1,11 +1,11 @@
 <!-- nav-group: Walkthroughs -->
 # A full checkout
 
-The checkout from the [introduction](01-introduction.md), stage by stage: why each piece is shaped the way it is, and how it fits in an app.
+The checkout from the [introduction](index.md), stage by stage: why each piece is shaped the way it is, and how it fits in an app.
 
 ## The flow
 
-<!-- example: docs-next/examples/CheckoutFlow.php -->
+<!-- example: docs/examples/CheckoutFlow.php -->
 ```php
 <?php
 

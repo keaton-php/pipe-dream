@@ -7,7 +7,7 @@ A rule can hand control back to your controller: send the customer somewhere, or
 
 Throw `PipeRuleRedirect` (`::toUrl($url)` or `::toRoute($name)`) or `PipeRuleLoadView` (`::load($view, $data)`). The flow ends and the exception leaves `sendIt()`. A hand-off isn't a failure; the receipt's outcome says `handed off`.
 
-<!-- example: docs-next/examples/AskForShippingAddress.php -->
+<!-- example: docs/examples/AskForShippingAddress.php -->
 ```php
 <?php
 
@@ -34,7 +34,7 @@ class AskForShippingAddress extends PipeRule
 
 Catch the hand-offs around `sendIt()`, then check the envelope for a stop:
 
-<!-- example: docs-next/examples/PlaceOrder.php -->
+<!-- example: docs/examples/PlaceOrder.php -->
 ```php
 <?php
 
@@ -73,7 +73,7 @@ class PlaceOrder
 
 Three orders: a good one, one without an address, and one with an item out of stock:
 
-<!-- example: docs-next/examples/scripts/controller.php -->
+<!-- example: docs/examples/scripts/controller.php -->
 ```php
 <?php
 
@@ -91,7 +91,7 @@ foreach ($orders as $order) {
 }
 ```
 
-<!-- output: docs-next/examples/scripts/controller.php -->
+<!-- output: docs/examples/scripts/controller.php -->
 ```text
 ord_1: 302 http://localhost/orders/ord_1
 ord_2: 302 http://localhost/checkout/ord_2/address

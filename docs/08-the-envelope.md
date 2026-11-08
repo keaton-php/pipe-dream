@@ -5,7 +5,7 @@ Your order travels through the flow inside an envelope. It's what every rule rec
 
 ## It's your object, plus the run
 
-<!-- example: docs-next/examples/scripts/envelope.php -->
+<!-- example: docs/examples/scripts/envelope.php -->
 ```php
 <?php
 
@@ -32,7 +32,7 @@ echo $envelope->get(CheckCardVelocity::class), PHP_EOL;              // 2 is Pip
 echo $envelope->hasFatalErrors() ? 'stopped' : 'not stopped', PHP_EOL;
 ```
 
-<!-- output: docs-next/examples/scripts/envelope.php -->
+<!-- output: docs/examples/scripts/envelope.php -->
 ```text
 Keaton\PipeDream\PipeEnvelope
 the same $order
