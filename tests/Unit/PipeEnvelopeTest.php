@@ -74,4 +74,16 @@ class PipeEnvelopeTest extends TestCase
         $this->expectException(\BadMethodCallException::class);
         PipeEnvelope::wrap($subject)->nothingHere();
     }
+
+    public function test_methods_the_subject_answers_through_call_pass_through(): void
+    {
+        $subject = new class {
+            public function __call($name, $arguments)
+            {
+                return $name.':'.implode(',', $arguments);
+            }
+        };
+
+        $this->assertSame('active:recent', PipeEnvelope::wrap($subject)->active('recent'));
+    }
 }

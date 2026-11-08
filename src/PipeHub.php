@@ -341,16 +341,21 @@ class PipeHub
      */
     protected function run(PipeEnvelope $subject, bool $withinFlow = false, ?Closure $onFlowError = null): PipeEnvelope
     {
-        if ($this->skipThisHub) {
-            $this->log($subject, 'info', 'PipeHub:sendIt', 'Skipping hub', $this->getPipeHubContext());
-            $this->sendEvent($subject, 'skip');
-
-            return $subject;
-        }
-
         $pipes = [];
+        $skippedHub = false;
+        $fatalsBefore = $subject->logger()->fatals()->count();
 
         try {
+            if ($this->skipThisHub) {
+                $this->log($subject, 'info', 'PipeHub:sendIt', 'Skipping hub', $this->getPipeHubContext());
+                $this->sendEvent($subject, 'skip');
+
+                // Only once the event has gone out cleanly: a listener that fails stops the hub like any other failure
+                $skippedHub = true;
+
+                return $subject;
+            }
+
             $skipRules = (bool) ($this->skipIfCallback
                 ? $this->callViaContainer($this->skipIfCallback, ['subject' => $subject])
                 : false);
@@ -394,6 +399,13 @@ class PipeHub
                     return $this->executeThenCallback($subject, $onError);
                 });
         } catch (PipeRuleFatal $e) {
+            // A rule records its own fatal before this is thrown. One thrown
+            // from skipIf() or an event listener has not been recorded yet,
+            // and a stop with no fatal on the log would read as success.
+            if ($subject->logger()->fatals()->count() === $fatalsBefore) {
+                $subject->logger()->fatal('PipeHub:sendIt', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeHubContext());
+            }
+
             $this->stopForFatal($e, $subject, $withinFlow);
         } catch (PipeRuleRedirect $e) {
             $e->resolveRoute($this->app);
@@ -417,12 +429,15 @@ class PipeHub
 
             $this->stopForFatal(new PipeRuleFatal($e->getMessage(), $subject, 0, $e), $subject, $withinFlow);
         } finally {
-            $this->log($subject, 'info', 'PipeHub:sendIt', 'Finalized result!');
+            // A hub that was skipped cleanly has nothing to finalize
+            if (! $skippedHub) {
+                $this->log($subject, 'info', 'PipeHub:sendIt', 'Finalized result!');
 
-            // A nested run of this hub may have replaced these; the run that
-            // finishes last is the one getSubject() describes.
-            $this->subject = $subject;
-            $this->instantiatedPipes = $pipes;
+                // A nested run of this hub may have replaced these; the run that
+                // finishes last is the one getSubject() describes.
+                $this->subject = $subject;
+                $this->instantiatedPipes = $pipes;
+            }
         }
 
         return $subject;

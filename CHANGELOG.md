@@ -4,6 +4,8 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.0.0] - Unreleased
+
 ### Added
 
 - **Database persistence.** A publishable `pipe_dream_logs` migration (`--tag=pipe-dream-migrations`), the `PipeDreamLog` model (with `logger()` to rebuild a stored run, `subject()` morph, `forRun()` and `withProblems()` scopes) and `DatabasePersistStrategy`, which upserts one row per run.
@@ -24,6 +26,9 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ### Fixed
 
+- A `PipeRuleFatal` thrown from `skipIf()` or an event listener stopped the hub but left no fatal on the log, so `hasFatalErrors()` was false and the stored `has_fatals` was false. It is now recorded as a fatal, once.
+- An exception from a listener of a skipped hub's `skip` event escaped the hub; it now stops the hub like any other failure outside the pipes.
+- Method calls on the envelope now reach a subject's `__call()` (an Eloquent scope, a forwarded query method); before, only methods the subject declared were forwarded.
 - PHP errors such as `TypeError` and `ArgumentCountError` escaped rules, hubs and the manager: only `\Exception` was caught, so they left no `FAIL` result and bypassed the hub's failure handling. Every `Throwable` is now handled, after the fatal, redirect and load-view cases.
 - A hub given its own container resolved rules from it but called rule methods and closure pipes, and built envelopes, through the global container. Everything in a run now uses the hub's container (and a manager's envelope uses the manager's).
 - A rule bound as a singleton kept one hub's `skipIf()` skip or error setting in later hubs and runs. The hub now writes its whole per-run policy on every run, separately from the rule's own settings.

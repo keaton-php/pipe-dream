@@ -101,6 +101,20 @@ class EventsTest extends TestCase
         $this->assertSame(['HubSkipped', 'HubSkipped'], Journal::$entries);
     }
 
+    public function test_a_listener_that_throws_on_a_skipped_hub_stops_the_hub_like_any_other_failure(): void
+    {
+        Event::listen(HubSkipped::class, fn () => throw new \RuntimeException('listener broke'));
+
+        $envelope = $this->hub()
+            ->addPipe(SecondRule::class)
+            ->skip()
+            ->onFatal(fn ($subject, $e) => Journal::record('onFatal: '.$e->getMessage()))
+            ->sendIt(new stdClass());
+
+        $this->assertTrue($envelope->hasFatalErrors());
+        $this->assertContains('onFatal: listener broke', Journal::$entries);
+    }
+
     public function test_events_work_inside_a_manager(): void
     {
         PipeManager::create([
