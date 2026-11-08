@@ -12,7 +12,7 @@ A named stage of a flow: an ordered list of rules or closures. [Pipes and hubs](
 | `PipeHub::create($container = null)` | Makes an empty hub. |
 | `name($name)`, `description($text)` | Labels the hub. |
 | `addPipe($pipe)`, `addPipes($pipes)` | Adds a closure or a `PipeRule` class name; throws `PipeHubException` for anything else. |
-| `skipIf($callback)` | When the callback returns true, every rule is logged as skipped and none runs; `then()` still runs. |
+| `skipIf($callback, $reason = null)` | When the callback returns true or a non-empty string, every rule is logged as skipped and none runs; `then()` still runs. A returned string is the reason; `$reason` is the reason for a plain true. |
 | `skip($shouldSkip = true)` | Skips the whole hub, `then()` included. |
 | `subject($subject)` | Sets the subject, for a later `sendIt()` with no argument. |
 | `then($callback)` | Runs after the hub's last rule, when no fatal stopped the hub. |
@@ -25,7 +25,7 @@ A named stage of a flow: an ordered list of rules or closures. [Pipes and hubs](
 | `sendIt($subject = null)` | Runs the hub and returns the envelope. |
 | `wrapInEnvelope($subject)` | Wraps a subject in an envelope (or returns an envelope unchanged). |
 | `getName()`, `getDescription()`, `getPipes()`, `getInstantiatedPipes()`, `getSubject()` | Read back what the hub holds. |
-| `getSkipIf()`, `getThen()`, `getOnError()`, `getOnFatal()`, `getEvents()` | Read back the callbacks and events. |
+| `getSkipIf()`, `getSkipIfReason()`, `getThen()`, `getOnError()`, `getOnFatal()`, `getEvents()` | Read back the callbacks and events. |
 | `stopsOnlyThisHubOnFatal()`, `treatsErrorsAsFatal()`, `isSkipped()`, `persistsLogs()`, `throwsFatals()` | Read back the hub's settings. |
 
 ## PipeManager
@@ -61,6 +61,7 @@ What a pipe receives: the subject, the shared values, the results and the log. [
 | `flowName()`, `setFlowName($name)` | The flow's name. |
 | `results()` | The rule results (`PipeRuleResults`). |
 | `steps()` | The run as a `Collection` of `StepRecord`, one per step, in order. |
+| `receipt()` | The run as a `Receipt`, ready to format or echo. |
 | `logger()`, `logs()` | The `PipeLogger`, and its records. |
 | `hasErrors()`, `hasFatalErrors()` | Whether an error or fatal was recorded. |
 | `logLevel($level)` | Sets the log level (`PipeLogger::LEVEL_*`). |
@@ -112,6 +113,32 @@ One step of a run, from `$envelope->steps()`. [Reading the log](05-reading-the-l
 | `wasOk()`, `wasSkipped()`, `hasErrors()`, `wasFatal()` | The status as yes/no questions. |
 | `skipReason()` | Why a skipped step was skipped (its first logged line), or null. |
 | `messages()` | The info, warning and error lines the step logged, as a `Collection`. |
+| `origin()` | Where the step's first error or fatal was raised, as `file:line`, or null. |
+
+## Receipt
+
+The run as a receipt, from `$envelope->receipt()` or `PipeDreamLog::receipt()`. [Reading the log](05-reading-the-log.md) shows it in use.
+
+| Method | What it does |
+|---|---|
+| `format($format = null)` | The receipt in a `ReceiptFormat` (the default one when none is given). |
+| `print($format = null)` | Echoes it. `echo $receipt` does the same with the default format. |
+| `Receipt::defaultFormat()` | The format bound to `ReceiptFormat` in the container, else `ConsoleFormat`. |
+| `flowName()`, `runId()` | Which run this is. |
+| `summary()` | The subject's `ReceiptSummary`, as recorded when the run ended, or null. |
+| `outcome()` | `Receipt::COMPLETED`, `COMPLETED_WITH_ERRORS`, `HANDED_OFF` or `STOPPED`. |
+| `wasStopped()`, `hasErrors()`, `wasHandedOff()` | The outcome as yes/no questions. |
+| `duration()` | The run's total time, in milliseconds. |
+| `hubs()` | A `Collection` of `ReceiptHub`: `name()`, `description()`, `steps()`, `wasSkipped()`, `skipReason()` (when every rule was skipped for one reason), `duration()`. |
+| `steps()`, `logger()` | The steps, and the log they came from. |
+
+| Format | What it gives you | Options |
+|---|---|---|
+| `ConsoleFormat` | Plain text, one line per step under its hub (the default). | `colors`, `times`, `descriptions`, `origins`, `runId` |
+| `MarkdownFormat` | A table per hub. | `times`, `descriptions`, `origins`, `runId` |
+| `ArrayFormat` | A plain array. | none |
+
+`ReceiptFormat` (`format(Receipt $receipt): mixed`) is the interface to write your own; `ReceiptSummary` (`receiptSummary(): ?string`) is the optional interface a subject implements to head its receipt.
 
 ## PipeLogger
 
@@ -139,6 +166,7 @@ One step of a run, from `$envelope->steps()`. [Reading the log](05-reading-the-l
 | `DatabasePersistStrategy::__construct($format = null, $model = PipeDreamLog::class)` | Saves a run as one row. |
 | `PipeLoggerJsonStrategy`, `PipeLoggerSerializeStrategy` | The two formats that ship. |
 | `PipeDreamLog::logger($strategy = null)`, `subject()` | Rebuild a stored run; the model it ran for. |
+| `PipeDreamLog::receipt($strategy = null)` | The stored run as a `Receipt`. |
 | `PipeDreamLog::forRun($runId)`, `withProblems()` | Query scopes. |
 
 ## Exceptions

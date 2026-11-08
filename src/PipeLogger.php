@@ -165,6 +165,7 @@ class PipeLogger
             $upper = $position + 1 < count($anchors) ? $anchors[$position + 1] : $count;
 
             $messages = [];
+            $origin = null;
 
             for ($j = $lower + 1; $j < $upper; $j++) {
                 if ($j === $anchor || (string) ($records[$j]['key'] ?? '') !== $key) {
@@ -174,6 +175,10 @@ class PipeLogger
                 if (in_array($records[$j]['type'] ?? '', [self::INFO, self::WARNING, self::ERROR, self::FATAL], true)) {
                     $messages[] = (string) ($records[$j]['data'] ?? '');
                 }
+
+                if ($origin === null && in_array($records[$j]['type'] ?? '', [self::ERROR, self::FATAL], true) && isset($records[$j]['context']['file'])) {
+                    $origin = $records[$j]['context']['file'].':'.($records[$j]['context']['line'] ?? 0);
+                }
             }
 
             $steps->push(new StepRecord(
@@ -181,7 +186,8 @@ class PipeLogger
                 $hubAtIndex[$anchor],
                 $record['data'] ?? null,
                 $this->durationFor($records, $anchor, $key, $usedStart, $usedEnd),
-                $messages
+                $messages,
+                $origin
             ));
         }
 

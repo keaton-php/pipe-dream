@@ -4,6 +4,19 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **`$envelope->receipt()`: the run as a receipt you can print.** A `Receipt` holds the flow, its outcome (`completed`, `completed with errors`, `handed off`, `stopped`) and each hub (`ReceiptHub`) with its steps; a `ReceiptFormat` decides how it looks. `ConsoleFormat` (the default), `MarkdownFormat` and `ArrayFormat` ship with the package; implement `ReceiptFormat` for your own and bind it to make it the default. `echo $receipt` prints the default format, `format($format)` returns any format, `print($format)` echoes it. `PipeDreamLog::receipt()` gives the same receipt for a saved run.
+- **`ReceiptSummary`**, an optional interface for a subject: `receiptSummary(): ?string` is recorded when the run ends and heads its receipt ("On hold: two fraud signals") in place of the generic outcome.
+- **A reason for `skipIf()`.** The callback may return a non-empty string: the hub's rules are skipped with that string as their reason. A plain `true` uses the new second argument, `skipIf($callback, $reason)`, when given. `false`, `null` and `''` do not skip.
+- `StepRecord::origin()`: the `file:line` of a step's first error or fatal.
+- A checkout example under `docs/examples` (an `Order`, 13 rules, and held / placed / stopped runs), used by the README.
+
+### Changed
+
+- An error or fatal's log line is now just its message: the ` [file | line N]` suffix is gone. The file and line are still in the record's context (`context.file`, `context.line`), and on `StepRecord::origin()`.
+- The README leads with the checkout flow and its receipt, then shows a click-intake receipt.
+
 ## [1.1.0] - 2026-11-08
 
 ### Added

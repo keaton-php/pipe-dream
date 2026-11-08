@@ -21,13 +21,15 @@ class StepRecord
      * @param  mixed  $result  what the step returned (a result constant, or a custom value)
      * @param  float|null  $duration  how long the step took, in milliseconds (null when timers are off)
      * @param  array<int, string>  $messages  the info/warning/error lines the step logged, in order
+     * @param  string|null  $origin  "file:line" of the step's first error or fatal
      */
     public function __construct(
         protected string $key,
         protected ?string $hub,
         protected mixed $result,
         protected ?float $duration,
-        protected array $messages = []
+        protected array $messages = [],
+        protected ?string $origin = null
     ) {
     }
 
@@ -127,5 +129,15 @@ class StepRecord
     public function messages(): Collection
     {
         return collect($this->messages);
+    }
+
+    /**
+     * Where the step's first error or fatal was raised, as "file:line": the
+     * line in the rule that called error() or fatal(), or threw. Null for a
+     * step with no error.
+     */
+    public function origin(): ?string
+    {
+        return $this->origin;
     }
 }

@@ -7,6 +7,7 @@ use Illuminate\Container\Container;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
+use Keaton\PipeDream\Contracts\ReceiptSummary;
 use Keaton\PipeDream\Exceptions\PipeRuleExceptionHandler;
 use Throwable;
 
@@ -190,8 +191,7 @@ class PipeEnvelope
             $this->markFatalRecorded($exception);
         }
 
-        $exceptionMessage = sprintf('%s [%s | line %s]', $exception->getMessage(), $file, $line);
-        $this->logger->{$type}($ruleClass, $exceptionMessage, [
+        $this->logger->{$type}($ruleClass, $exception->getMessage(), [
             'exception' => get_class($exception),
             'file' => $file,
             'line' => $line,
@@ -289,6 +289,39 @@ class PipeEnvelope
     public function steps()
     {
         return $this->logger->steps();
+    }
+
+    /**
+     * The run as a receipt: its hubs and steps, ready to format or echo.
+     */
+    public function receipt(): Receipt
+    {
+        return new Receipt($this->logger, $this->flowName(), $this->runId(), $this->subject);
+    }
+
+    /**
+     * Record the subject's ReceiptSummary, when it has one, so a saved run's
+     * receipt reads the same as the live one. Called once a run finishes.
+     *
+     * @internal
+     */
+    public function recordReceiptSummary(): void
+    {
+        if (! $this->subject instanceof ReceiptSummary) {
+            return;
+        }
+
+        try {
+            $summary = $this->subject->receiptSummary();
+        } catch (Throwable $e) {
+            $this->logger->warning(Receipt::SUMMARY_KEY, 'receiptSummary() failed: '.$e->getMessage());
+
+            return;
+        }
+
+        if ($summary !== null && $summary !== '') {
+            $this->logger->info(Receipt::SUMMARY_KEY, $summary);
+        }
     }
 
     public function hasErrors()

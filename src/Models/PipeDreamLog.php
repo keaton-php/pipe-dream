@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Keaton\PipeDream\Contracts\PipeLoggerStrategy;
 use Keaton\PipeDream\PipeLogger;
+use Keaton\PipeDream\Receipt;
 use Keaton\PipeDream\Strategies\PipeLoggerJsonStrategy;
 
 /**
@@ -46,6 +47,15 @@ class PipeDreamLog extends Model
     public function logger(?PipeLoggerStrategy $strategy = null): PipeLogger
     {
         return (new PipeLogger())->rebuild($this->log, $strategy ?? new PipeLoggerJsonStrategy());
+    }
+
+    /**
+     * The stored run as a receipt, the same one the live envelope gave.
+     * Pass the strategy the log was written with if it was not JSON.
+     */
+    public function receipt(?PipeLoggerStrategy $strategy = null): Receipt
+    {
+        return new Receipt($this->logger($strategy), $this->flow, $this->run_id);
     }
 
     public function scopeForRun($query, string $runId)
