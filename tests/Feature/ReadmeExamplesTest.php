@@ -168,10 +168,20 @@ class ReadmeExamplesTest extends TestCase
 
     public function test_every_step_is_logged_with_its_return_value(): void
     {
-        $vars = $this->assertExampleOutput('log.php');
+        $vars = $this->assertExampleOutput('hub-log.php');
 
         $this->assertSame(
             ['hello,   PIPE dream', 'hello, PIPE dream', 'Hello, Pipe Dream'],
+            $vars['envelope']->results()->map->result()->values()->all()
+        );
+    }
+
+    public function test_the_log_points_at_the_step_that_broke_the_title(): void
+    {
+        $vars = $this->assertExampleOutput('hub-log-broken.php');
+
+        $this->assertSame(
+            ['hello,   PIPE dream', 'hello,PIPEdream', 'Hello,pipedream'],
             $vars['envelope']->results()->map->result()->values()->all()
         );
     }
