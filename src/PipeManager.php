@@ -233,6 +233,8 @@ class PipeManager
 
             $subject->logger()->info('PipeManager:sendIt', 'Finalized result!');
         } finally {
+            $subject->recordReceiptSummary();
+
             if ($this->persistLogsOnFinalize) {
                 $subject->persist();
             }

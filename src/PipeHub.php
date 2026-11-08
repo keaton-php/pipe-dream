@@ -44,6 +44,8 @@ class PipeHub
 
     protected ?Closure $skipIfCallback = null;
 
+    protected ?string $skipIfReason = null;
+
     protected bool $skipThisHub = false;
 
     protected array $broadcastEvents = [
@@ -118,12 +120,15 @@ class PipeHub
     }
 
     /**
-     * When the callback returns true the hub still runs, but every rule in
-     * it is logged as skipped and none executes. then() still runs.
+     * When the callback returns true, or a non-empty string, the hub still
+     * runs, but every rule in it is logged as skipped and none executes.
+     * then() still runs. A string returned is the reason each rule records;
+     * for a plain true the reason is $reason, when given.
      */
-    public function skipIf(Closure $callback)
+    public function skipIf(Closure $callback, ?string $reason = null)
     {
         $this->skipIfCallback = $callback;
+        $this->skipIfReason = $reason;
 
         return $this;
     }
@@ -299,6 +304,8 @@ class PipeHub
             // Defensive: whatever threw it, the caller gets a usable URL.
             throw $e->resolveRoute($this->app);
         } finally {
+            $subject->recordReceiptSummary();
+
             if ($this->persistLogsOnFinalize) {
                 $subject->persist();
             }
@@ -355,21 +362,21 @@ class PipeHub
                 return $subject;
             }
 
-            $skipRules = (bool) ($this->skipIfCallback
-                ? $this->callViaContainer($this->skipIfCallback, ['subject' => $subject])
-                : false);
+            [$skipRules, $skipReason] = $this->skipDecision(
+                $this->skipIfCallback ? $this->callViaContainer($this->skipIfCallback, ['subject' => $subject]) : false
+            );
 
             $onError = $this->errorReporter($subject, $onFlowError);
 
             $pipes = $this->instantiatedPipes = array_map(
-                fn ($pipe) => $this->instantiate($pipe, $skipRules, $onError),
+                fn ($pipe) => $this->instantiate($pipe, $skipRules, $onError, $skipReason),
                 $this->pipes
             );
 
             $this->log($subject, 'info', 'PipeHub:sendIt', 'Sending subject through all pipes', $this->getPipeHubContext());
 
             if ($skipRules) {
-                $this->log($subject, 'info', 'PipeHub:sendIt', 'Skipping every rule: skipIf() returned true', $this->getPipeHubContext());
+                $this->log($subject, 'info', 'PipeHub:sendIt', 'Skipping every rule: '.($skipReason ?? 'skipIf() returned true'), $this->getPipeHubContext());
                 $this->sendEvent($subject, 'skip');
             } else {
                 $this->sendEvent($subject, 'before');
@@ -523,7 +530,23 @@ class PipeHub
         };
     }
 
-    protected function instantiate($pipe, bool $skip, ?Closure $onError = null): PipeRule
+    /**
+     * What a skipIf() result means: a non-empty string skips with that
+     * string as the reason; anything else skips when truthy, with the
+     * reason given to skipIf(), if any.
+     *
+     * @return array{0: bool, 1: ?string}
+     */
+    protected function skipDecision(mixed $result): array
+    {
+        if (is_string($result) && $result !== '') {
+            return [true, $result];
+        }
+
+        return (bool) $result ? [true, $this->skipIfReason] : [false, null];
+    }
+
+    protected function instantiate($pipe, bool $skip, ?Closure $onError = null, ?string $skipReason = null): PipeRule
     {
         if ($pipe instanceof Closure) {
             $rule = new ClosurePipe($pipe);
@@ -542,7 +565,7 @@ class PipeHub
 
         // The policy is written in full on every run either way.
         return $rule
-            ->applyPolicy($skip, 'Skipped: the hub\'s skipIf() returned true', $this->errorsAreFatal, $onError)
+            ->applyPolicy($skip, $skipReason ?? 'Skipped: the hub\'s skipIf() returned true', $this->errorsAreFatal, $onError)
             ->setContainer($this->app);
     }
 
@@ -690,6 +713,11 @@ class PipeHub
     public function getSkipIf(): ?Closure
     {
         return $this->skipIfCallback;
+    }
+
+    public function getSkipIfReason(): ?string
+    {
+        return $this->skipIfReason;
     }
 
     public function getThen(): ?Closure

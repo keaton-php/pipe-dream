@@ -2,184 +2,147 @@
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/keaton-php/pipe-dream.svg?style=flat-square)](https://packagist.org/packages/keaton-php/pipe-dream)
 [![Tests](https://github.com/keaton-php/pipe-dream/actions/workflows/tests.yml/badge.svg?branch=1.x)](https://github.com/keaton-php/pipe-dream/actions/workflows/tests.yml)
-[![PHP Version](https://img.shields.io/packagist/dependency-v/keaton-php/pipe-dream/php?style=flat-square)](https://packagist.org/packages/keaton-php/pipe-dream)
-[![Total Downloads](https://img.shields.io/packagist/dt/keaton-php/pipe-dream.svg?style=flat-square)](https://packagist.org/packages/keaton-php/pipe-dream)
 [![License](https://img.shields.io/packagist/l/keaton-php/pipe-dream.svg?style=flat-square)](LICENSE)
 
-Pipe Dream turns a Laravel pipeline into a flow you can read, and a log you can read back: every step named, timed and recorded.
+Pipe Dream turns your business logic into a flow you can read, and every run into a receipt you can read back: every step named, timed and recorded.
 
-## Here's a flow
+---
 
-Group your steps into named hubs of named rules, and the composition reads like a table of contents. Here is a two-hub flow that publishes a post:
+> **"Why was my order put on hold?"**
 
-<!-- example: docs/examples/scripts/steps.php -->
+In most codebases, the honest answer is *"let me get an engineer to dig through the logs."*
+
+With Pipe Dream, the answer is one database row:
+
+<!-- output: docs/examples/scripts/checkout-held.php -->
+```text
+Checkout · On hold: Two or more fraud signals (2.58 ms)
+
+Validate the order — Is this a complete order for items we can actually ship?
+  ✓ RequireShippingAddress        (0.06 ms)
+  ✓ ConfirmItemsInStock           (1.75 ms)  3 items in stock
+  ✓ ApplyDiscountCodes            (0.04 ms)  SPRING20 applied: -$24.00
+  ✓ CalculateTax                  (0.02 ms)  Tax: $7.92
+
+Fraud screen — Does this look like the real cardholder?
+  ✗ MatchBillingToShippingCountry (0.02 ms)  Billing US, shipping NL
+  ✗ CheckCardVelocity             (0.01 ms)  4 cards tried on this account in 10 minutes
+  ✓ ScoreDeviceFingerprint        (0.01 ms)
+
+Charge — Take the money, only for orders we will ship · skipped: Held for review: Two or more fraud signals
+  ↷ AuthorizePayment              skipped
+  ↷ CapturePayment                skipped
+
+Fulfil — Reserve stock, tell the warehouse, email the receipt · skipped: Held for review: Two or more fraud signals
+  ↷ ReserveInventory              skipped
+  ↷ SendToWarehouse               skipped
+  ↷ EmailReceipt                  skipped
+```
+
+Every rule that ran. What it decided. Why. How long it took. And proof of what *didn't* happen: the card was never charged and nothing shipped, so your support team can say so, with receipts.
+
+You didn't write a single log line to get that. You wrote this:
+
+<!-- example: docs/examples/scripts/checkout.php -->
 ```php
 <?php
 
 use Keaton\PipeDream\PipeHub;
 use Keaton\PipeDream\PipeManager;
 
-$flow = PipeManager::create([
-    PipeHub::create()->name('Prepare')->addPipes([TidyTitle::class, CountWords::class, CheckTitleLength::class]),
-    PipeHub::create()->name('Publish')->addPipes([SlugifyTitle::class]),
-])->name('Publish a post');
+$envelope = PipeManager::create([
 
-$envelope = $flow->subject((object) ['title' => 'Launch'])->sendIt();
+    PipeHub::create()
+        ->name('Validate the order')
+        ->description('Is this a complete order for items we can actually ship?')
+        ->addPipes([
+            RequireShippingAddress::class,
+            ConfirmItemsInStock::class,
+            ApplyDiscountCodes::class,
+            CalculateTax::class,
+        ]),                           // a broken order ends the whole flow here
 
-echo $envelope->steps()
-    ->map(fn ($step) => $step->wasSkipped()
-        ? "↷ {$step->name()} skipped — {$step->skipReason()}"
-        : sprintf('✓ %s (%.2f ms)', $step->name(), $step->duration()))
-    ->implode("\n");
+    PipeHub::create()
+        ->name('Fraud screen')
+        ->description('Does this look like the real cardholder?')
+        ->addPipes([
+            MatchBillingToShippingCountry::class,
+            CheckCardVelocity::class,
+            ScoreDeviceFingerprint::class,
+        ])
+        ->skipIf(fn ($order) => $order->customerIsTrusted(), 'Trusted customer')
+        ->then(fn ($order) => $order->riskSignals() >= 2 ? $order->holdForReview('Two or more fraud signals') : null),
+
+    PipeHub::create()
+        ->name('Charge')
+        ->description('Take the money, only for orders we will ship')
+        ->addPipes([
+            AuthorizePayment::class,
+            CapturePayment::class,
+        ])
+        ->skipIf(fn ($order) => $order->isOnHold() ? "Held for review: {$order->holdReason}" : null)
+        ->errorsAreFatal(),           // a failed charge ends the flow
+
+    PipeHub::create()
+        ->name('Fulfil')
+        ->description('Reserve stock, tell the warehouse, email the receipt')
+        ->addPipes([
+            ReserveInventory::class,
+            SendToWarehouse::class,
+            EmailReceipt::class,
+        ])
+        ->skipIf(fn ($order) => $order->isOnHold() ? "Held for review: {$order->holdReason}" : null),
+
+])
+    ->name('Checkout')
+    ->subject($order)
+    ->then(fn ($order) => $order->markPlaced())
+    ->sendIt();
 ```
 
-Run it, and ask what happened. `$envelope->steps()` is every step in order — each with its name, its timing, what it returned, and why it was skipped:
+Read it once and you understand the whole checkout process. So will the next engineer, your support lead, and you in six months.
 
-<!-- output: docs/examples/scripts/steps.php -->
+## Same shape, any business
+
+Checkout is one flow. Here's a completely different one: a production ad-click intake, the kind that sits in front of a high-volume tracking system. Different business, same pipe, same receipt:
+
 ```text
-✓ TidyTitle (0.38 ms)
-✓ CountWords (0.02 ms)
-↷ CheckTitleLength skipped — A one-word title is fine
-✓ SlugifyTitle (0.05 ms)
+Ad click intake · completed with errors (1.40 ms)
+
+Validate & start session
+  ✓ RequireTrackingParameters      (0.02 ms)
+  ✓ VerifyClickSignature           (0.01 ms)
+  ✓ RecognizeCampaign              (0.01 ms)  Campaign quillstone-free-plan
+
+Suppression · skipped: Newsletter campaign
+  ↷ CheckAdvertiserSuppressionList skipped
+
+Bot checks
+  ✗ DetectHostingProviderIp        (0.14 ms)  203.0.113.23 belongs to Example Cloud
+  ✗ ScoreClickVelocity             (0.02 ms)  4 clicks from this IP in a minute
+
+Route
+  ✓ ChooseDestination              (0.01 ms)  Held for review: two bot signals
 ```
 
-Your flow reads like the spec. Your log reads like the flow.
+That pattern has pushed hundreds of millions of clicks through production, with a full audit trail on every one. When something looked wrong, nobody stepped through code. They read the receipt.
 
-## What a pipeline is
+Loan decisions, KYC onboarding, insurance claims, refunds, content moderation: **if it's a series of decisions someone will later ask you to explain, it's a pipe.**
 
-A pipeline sends one value (the **subject**) through a list of steps (the **pipes**), in order. Each pipe gets the subject, does its bit, and passes it on. Laravel ships one, `Illuminate\Pipeline\Pipeline`. A `PipeHub` is Pipe Dream's: the same idea, with plain closures as the pipes.
+## How it works, in three words
 
-<!-- example: docs/examples/scripts/hub.php -->
-```php
-<?php
+- **Rules:** small classes that do one thing, like `CheckCardVelocity` or `VerifyClickSignature`. Each one passes, fails, skips, or stops the flow, and gives a reason.
+- **Hubs:** named stages that group rules, with control flow declared right on the stage: `skipIf()`, `then()`, `errorsAreFatal()`, `fatalsStopThisHubOnly()`.
+- **The receipt:** every run is timed and logged automatically, then saved as one row you can query (`PipeDreamLog::withProblems()`) and rebuild into the timelines above, long after the request is gone.
 
-use Keaton\PipeDream\PipeHub;
-
-$post = (object) ['title' => '  hello,   PIPE dream  '];
-
-PipeHub::create()
-    ->addPipes([
-        fn ($post) => $post->title = trim($post->title),
-        fn ($post) => $post->title = preg_replace('/\s+/', ' ', $post->title),
-        fn ($post) => $post->title = ucwords(strtolower($post->title)),
-    ])
-    ->sendIt($post);
-
-echo $post->title;
-```
-
-<!-- output: docs/examples/scripts/hub.php -->
-```text
-Hello, Pipe Dream
-```
-
-No `$next` to call and nothing to return: the hub moves on to the next pipe by itself.
-
-## Now ask it what happened
-
-Here is the difference. A plain pipeline hands you the final value and nothing else: if the title came out wrong, you are left guessing which step broke it. The hub kept notes. `steps()` is the high-level view you saw above; `logs()` is the lower-level one, every record as it was written:
-
-<!-- example: docs/examples/scripts/hub-log.php -->
-```php
-<?php
-
-use Keaton\PipeDream\PipeHub;
-
-$post = (object) ['title' => '  hello,   PIPE dream  '];
-
-$envelope = PipeHub::create()
-    ->addPipes([
-        fn ($post) => $post->title = trim($post->title),
-        fn ($post) => $post->title = preg_replace('/\s+/', ' ', $post->title),
-        fn ($post) => $post->title = ucwords(strtolower($post->title)),
-    ])
-    ->sendIt($post);
-
-foreach ($envelope->logs() as $record) {
-    printf("%-11s %-24s %s\n", $record['type'], $record['key'], $record['data']);
-}
-```
-
-<!-- output: docs/examples/scripts/hub-log.php -->
-```text
-info        PipeHub:sendIt           Sending subject through all pipes
-timerStart  Closure@hub-log.php:9    Executing rule Closure@hub-log.php:9
-returnValue Closure@hub-log.php:9    hello,   PIPE dream
-timerEnd    Closure@hub-log.php:9    Finished executing rule Closure@hub-log.php:9
-timerStart  Closure@hub-log.php:10   Executing rule Closure@hub-log.php:10
-returnValue Closure@hub-log.php:10   hello, PIPE dream
-timerEnd    Closure@hub-log.php:10   Finished executing rule Closure@hub-log.php:10
-timerStart  Closure@hub-log.php:11   Executing rule Closure@hub-log.php:11
-returnValue Closure@hub-log.php:11   Hello, Pipe Dream
-timerEnd    Closure@hub-log.php:11   Finished executing rule Closure@hub-log.php:11
-info        PipeHub:sendIt           Finalized result!
-```
-
-Every pipe was timed, and what each one returned was recorded, without a single line of logging in your code. `$envelope->results()` holds the same results, ready to check in code.
-
-Now break it on purpose. Change the second step so it eats every space, run the hub again, and ask the steps which one lost the spaces:
-
-<!-- example: docs/examples/scripts/hub-log-broken.php -->
-```php
-<?php
-
-use Keaton\PipeDream\PipeHub;
-
-$post = (object) ['title' => '  hello,   PIPE dream  '];
-
-$envelope = PipeHub::create()
-    ->addPipes([
-        fn ($post) => $post->title = trim($post->title),
-        fn ($post) => $post->title = preg_replace('/\s+/', '', $post->title), // oops: '' instead of ' '
-        fn ($post) => $post->title = ucwords(strtolower($post->title)),
-    ])
-    ->sendIt($post);
-
-$culprit = $envelope->steps()->first(fn ($step) => ! str_contains($step->returnValue(), ' '));
-
-echo "The spaces vanish at {$culprit->name()}: {$culprit->returnValue()}";
-```
-
-<!-- output: docs/examples/scripts/hub-log-broken.php -->
-```text
-The spaces vanish at Closure@hub-log-broken.php:10: hello,PIPEdream
-```
-
-You don't have to guess which step ate the spaces. `steps()->first(...)` walks the run in order and hands you the first step whose output lost them: the second one.
-
-That's the whole difference. A pipeline tells you the answer. A hub hands you the receipt.
-
-And that's only the start. Once every step is a named, recorded thing, a lot more opens up:
-
-- **Rules as classes:** each pipe becomes a small, testable class with a name, so the log reads like a description of your business.
-- **Stacked hubs:** group steps into stages and run the stages as one flow, with one log.
-- **Control flow:** skip a step, stop a flow early, redirect, or catch a failure without losing the log.
-- **Saved runs:** store every log and query it later: which runs hit problems, and exactly where.
-- **A flow you can draw:** read a flow back and render it as a page, then watch real traffic move through it.
-
-All of it builds on what you just saw. The docs pick it up from here.
-
-## Installation
+## Try it
 
 ```bash
 composer require keaton-php/pipe-dream
 ```
 
-Pipe Dream needs PHP 8.1 or newer and Laravel 9 to 13. The service provider is discovered automatically.
+PHP 8.1+, Laravel 9–13. The service provider is auto-discovered.
 
-## Documentation
+**→ [Build your first flow in five minutes](https://kevineaton.dev/docs/pipe-dream/quickstart/)** · [Docs](https://kevineaton.dev/docs/pipe-dream/) · [The story behind it](https://kevineaton.dev/writing/pipe-driven-development/)
 
-The full documentation is at [kevineaton.dev/docs/pipe-dream](https://kevineaton.dev/docs/pipe-dream/). Start with [Your first flow](https://kevineaton.dev/docs/pipe-dream/quickstart/): it builds the flow above, step by step, and reads its log.
-
-## Read the story
-
-Why a flow that reads like a table of contents beats a 400-line method: [Pipe-Driven Development](https://kevineaton.dev/writing/pipe-driven-development/).
-
-## License
-
-The MIT License (MIT). See [LICENSE](LICENSE) for the full text, and [CHANGELOG.md](CHANGELOG.md) for what changed.
-
-## Credits
-
-- [Kevin Eaton](https://kevineaton.dev)
-- [All contributors](https://github.com/keaton-php/pipe-dream/graphs/contributors)
+MIT licensed. Built by [Kevin Eaton](https://kevineaton.dev).

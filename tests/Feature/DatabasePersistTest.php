@@ -80,6 +80,18 @@ class DatabasePersistTest extends TestCase
         $this->assertSame($envelope->logs(), json_decode($row->log, true));
     }
 
+    public function test_a_saved_run_prints_the_same_receipt_as_the_live_one(): void
+    {
+        $envelope = PipeEnvelope::wrap(new stdClass())->persistWith(new DatabasePersistStrategy());
+        $this->flow()->subject($envelope)->sendIt();
+
+        $saved = PipeDreamLog::forRun($envelope->runId())->first()->receipt();
+
+        $this->assertSame('Click intake', $saved->flowName());
+        $this->assertSame($envelope->runId(), $saved->runId());
+        $this->assertSame((string) $envelope->receipt(), (string) $saved);
+    }
+
     public function test_persisting_the_same_run_again_updates_its_row(): void
     {
         $envelope = PipeEnvelope::wrap(new stdClass())->persistWith(new DatabasePersistStrategy());

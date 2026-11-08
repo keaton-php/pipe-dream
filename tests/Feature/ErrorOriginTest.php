@@ -39,7 +39,7 @@ class ErrorOriginTest extends TestCase
 
         $this->assertSame($file, $record['context']['file']);
         $this->assertSame($line, $record['context']['line']);
-        $this->assertStringEndsWith("[{$file} | line {$line}]", $record['data']);
+        $this->assertStringNotContainsString(' | line ', $record['data']);
         $this->assertStringNotContainsString('src/PipeRule.php', $record['data']);
     }
 
@@ -84,5 +84,11 @@ class ErrorOriginTest extends TestCase
             ->sendIt(new stdClass());
 
         $this->assertRecordPointsAt($envelope->logger()->fatals()->first(), [__FILE__, $line]);
+    }
+    public function test_the_step_carries_the_origin_of_its_error(): void
+    {
+        [$file, $line] = $this->lineOf(ErrorRule::class, '$this->error(');
+
+        $this->assertSame("{$file}:{$line}", $this->run_(ErrorRule::class)->steps()->first()->origin());
     }
 }

@@ -8,7 +8,7 @@ use Keaton\PipeDream\Tests\TestCase;
 /**
  * The code examples in README.md, run as written.
  *
- * The README is a short pitch: it shows one hub, and what its log says. Each
+ * The README is a short pitch: it shows one flow, and the receipt it prints. Each
  * PHP block in it is preceded by an `<!-- example: path -->` marker naming a
  * complete file under docs/examples, and shows that file exactly; each output
  * block is preceded by an `<!-- output: path -->` marker and shows exactly what
@@ -25,7 +25,7 @@ class ReadmeExamplesTest extends TestCase
     {
         preg_match_all('/<!-- example: (\S+) -->\n```php\n(.*?)\n```/s', $this->readme(), $examples, PREG_SET_ORDER);
 
-        $this->assertGreaterThanOrEqual(3, count($examples));
+        $this->assertGreaterThanOrEqual(1, count($examples));
 
         foreach ($examples as [, $fixture, $shown]) {
             $this->assertSame(rtrim(file_get_contents(self::ROOT.'/'.$fixture), "\n"), $shown, "README example {$fixture} differs from its file");
@@ -36,7 +36,7 @@ class ReadmeExamplesTest extends TestCase
     {
         preg_match_all('/(.*)\n```php\n/', $this->readme(), $blocks);
 
-        $this->assertGreaterThanOrEqual(3, count($blocks[1]));
+        $this->assertGreaterThanOrEqual(1, count($blocks[1]));
 
         foreach ($blocks[1] as $lineBefore) {
             $this->assertMatchesRegularExpression('/^<!-- example: \S+ -->$/', $lineBefore, 'A PHP block in the README has no example marker');
@@ -47,7 +47,7 @@ class ReadmeExamplesTest extends TestCase
     {
         preg_match_all('/<!-- output: docs\/examples\/scripts\/(\S+) -->\n```text\n(.*?)\n```/s', $this->readme(), $outputs, PREG_SET_ORDER);
 
-        $this->assertGreaterThanOrEqual(3, count($outputs));
+        $this->assertGreaterThanOrEqual(1, count($outputs));
 
         foreach ($outputs as [, $script, $shown]) {
             ob_start();

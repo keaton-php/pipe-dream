@@ -83,4 +83,50 @@ class SkipTest extends TestCase
         $this->assertCount(1, $envelope->results());
         $this->assertSame('Nothing to check here', $envelope->logger()->infos()->firstWhere('key', SkipsItselfRule::class)['data']);
     }
+    private function skipIfMessages($callback, ?string $reason = null): array
+    {
+        $envelope = PipeHub::create()->addPipes([FirstRule::class, SecondRule::class])->skipIf($callback, $reason)->sendIt(new stdClass());
+
+        return $envelope->steps()->map(fn ($step) => $step->wasSkipped() ? $step->skipReason() : 'ran')->all();
+    }
+
+    public function test_skip_if_returning_a_string_skips_with_it_as_the_reason(): void
+    {
+        $this->assertSame(['On hold', 'On hold'], $this->skipIfMessages(fn () => 'On hold'));
+        $this->assertSame([], Journal::$entries);
+    }
+
+    public function test_skip_if_returning_true_uses_the_reason_given(): void
+    {
+        $this->assertSame(['Trusted customer', 'Trusted customer'], $this->skipIfMessages(fn () => true, 'Trusted customer'));
+    }
+
+    public function test_skip_if_returning_true_without_a_reason_says_skip_if_returned_true(): void
+    {
+        $this->assertSame(array_fill(0, 2, "Skipped: the hub's skipIf() returned true"), $this->skipIfMessages(fn () => true));
+    }
+
+    public function test_a_string_returned_by_skip_if_wins_over_the_reason_given(): void
+    {
+        $this->assertSame(['From the closure', 'From the closure'], $this->skipIfMessages(fn () => 'From the closure', 'Given'));
+    }
+
+    public function test_skip_if_returning_null_false_or_an_empty_string_runs_the_rules(): void
+    {
+        foreach ([null, false, ''] as $result) {
+            $this->assertSame(['ran', 'ran'], $this->skipIfMessages(fn () => $result, 'Never used'), var_export($result, true));
+        }
+    }
+
+    public function test_skip_if_returning_the_string_zero_still_skips(): void
+    {
+        $this->assertSame(['0', '0'], $this->skipIfMessages(fn () => '0'));
+    }
+
+    public function test_the_hub_logs_the_skip_reason(): void
+    {
+        $envelope = PipeHub::create()->name('Charge')->addPipe(FirstRule::class)->skipIf(fn () => 'On hold')->sendIt(new stdClass());
+
+        $this->assertContains('Skipping every rule: On hold', $envelope->logger()->infos()->where('key', 'PipeHub:sendIt')->pluck('data')->all());
+    }
 }

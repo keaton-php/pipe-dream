@@ -5,6 +5,10 @@ How do I ask a run what happened?
 
 Every run keeps a log on its envelope. The quickest way in is `$envelope->steps()`: the run as a list of steps, one per rule (or closure) that ran or was skipped, in order. Underneath it is `$envelope->logs()`, the raw records. Reach for steps first.
 
+## Print the receipt
+
+`echo $envelope->receipt();` prints the whole run, hub by hub and step by step, with what each rule decided and why. A receipt is the data; a format decides how it looks: `$envelope->receipt()->format(new MarkdownFormat)` for a ticket, `new ArrayFormat` for an API, `new ConsoleFormat(colors: true)` for a terminal (the default). Write your own by implementing `Keaton\PipeDream\Contracts\ReceiptFormat` (one method, `format(Receipt $receipt)`), and bind it to that interface to make it the default. A subject that implements `ReceiptSummary` puts its own words in the header ("On hold: two fraud signals"). A saved run prints the same receipt: `PipeDreamLog::forRun($runId)->first()->receipt()`.
+
 ## The steps of a run
 
 `steps()` returns a `Collection` of `StepRecord` objects, so you can map, filter and reduce them like any other collection:
