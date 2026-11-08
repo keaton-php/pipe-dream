@@ -203,6 +203,8 @@ hello,   PIPE dream
 the same $post
 ```
 
+One limit: a property read through the envelope is a copy, so `$envelope->tags[] = 'new'` changes nothing on your object. Read the array, change it, and assign the whole property back: `$envelope->tags = [...$envelope->tags, 'new'];`.
+
 ### Pipes can share values
 
 The envelope also holds values of its own, for the pipes to pass along: `set()` one in a pipe, `get()` it in a later one. That makes small state machines easy:

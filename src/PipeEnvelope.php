@@ -291,7 +291,10 @@ class PipeEnvelope
 
     public function __call($name, $arguments)
     {
-        if (is_object($this->subject) && method_exists($this->subject, $name)) {
+        // is_callable() also accepts what the subject answers through its own
+        // __call() (an Eloquent scope, a forwarded query method), and refuses
+        // a method the envelope may not call.
+        if (is_object($this->subject) && is_callable([$this->subject, $name])) {
             return $this->subject->$name(...$arguments);
         }
 

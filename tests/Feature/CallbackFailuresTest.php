@@ -50,6 +50,29 @@ class CallbackFailuresTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // A fatal thrown from outside a rule
+
+    public function test_a_fatal_thrown_from_skip_if_is_recorded_as_a_fatal(): void
+    {
+        $envelope = PipeHub::create()
+            ->skipIf(fn () => throw new PipeRuleFatal('skipIf gave up'))
+            ->addPipe(fn () => Journal::record('p1'))
+            ->sendIt(new stdClass());
+
+        $this->assertSame([], Journal::$entries);
+        $this->assertTrue($envelope->hasFatalErrors());
+    }
+
+    public function test_a_fatal_from_a_rule_is_recorded_once(): void
+    {
+        $envelope = PipeHub::create()
+            ->addPipe(FatalRule::class)
+            ->sendIt(new stdClass());
+
+        $this->assertCount(1, $envelope->logger()->fatals());
+    }
+
+    // ------------------------------------------------------------------
     // A hub's then()
 
     public function test_an_exception_in_a_hubs_then_is_an_error_and_the_flow_carries_on(): void
