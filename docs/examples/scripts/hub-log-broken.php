@@ -12,8 +12,6 @@ $envelope = PipeHub::create()
     ])
     ->sendIt($post);
 
-foreach ($envelope->logs() as $record) {
-    if ($record['type'] === 'returnValue') {
-        printf("%-30s %s\n", $record['key'], $record['data']);
-    }
-}
+$culprit = $envelope->steps()->first(fn ($step) => ! str_contains($step->returnValue(), ' '));
+
+echo "The spaces vanish at {$culprit->name()}: {$culprit->returnValue()}";

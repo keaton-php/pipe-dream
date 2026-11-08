@@ -81,13 +81,13 @@ $envelope = PipeManager::create([
     ->subject($post)
     ->sendIt();
 
-foreach ($envelope->logs() as $record) {
-    if ($record['data'] === 'Sending subject through all pipes') {
-        echo $record['context']['name'], PHP_EOL;
-    } elseif ($record['type'] === 'returnValue') {
-        echo '  ', $record['key'], ': ', $record['data'], PHP_EOL;
-    }
-}
+$envelope->steps()
+    ->groupBy->hub()
+    ->each(function ($steps, $hub) {
+        echo $hub, PHP_EOL;
+
+        $steps->each(fn ($step) => printf("  %s: %s\n", $step->name(), $step->status()));
+    });
 
 echo $post->status, ', ', $post->readingTime, ' read', PHP_EOL;
 ```
@@ -95,17 +95,17 @@ echo $post->status, ', ', $post->readingTime, ' read', PHP_EOL;
 <!-- output: docs/examples/scripts/together.php -->
 ```text
 Tidy
-  TidyTitle: 1
+  TidyTitle: ok
 Check
-  CountWords: 1
-  CheckTitleLength: 1
+  CountWords: ok
+  CheckTitleLength: ok
 Publish
-  SlugifyTitle: 1
-  Closure@together.php:26: published
+  SlugifyTitle: ok
+  Closure@together.php:26: ok
 published, 1 min read
 ```
 
-The flow reads like a table of contents, and the log tells the same story. With `'status' => 'draft'`, the Publish hub's pipes are logged as skipped instead, and the post stays a draft ([Skipping steps](09-skipping.md) shows that run).
+The flow reads like a table of contents, and `steps()` tells the same story: every step, grouped by the hub it ran in. With `'status' => 'draft'`, the Publish hub's steps come back skipped instead, and the post stays a draft ([Skipping steps](09-skipping.md) shows that run).
 
 ## Putting it together
 

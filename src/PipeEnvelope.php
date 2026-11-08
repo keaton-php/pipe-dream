@@ -279,6 +279,18 @@ class PipeEnvelope
         return $this->logger->records();
     }
 
+    /**
+     * The run as a list of steps, one per rule (or closure pipe) that ran or
+     * was skipped, in order. See PipeLogger::steps(). logs() is the lower-level
+     * view: every record, hub lines included.
+     *
+     * @return \Illuminate\Support\Collection<int, StepRecord>
+     */
+    public function steps()
+    {
+        return $this->logger->steps();
+    }
+
     public function hasErrors()
     {
         return $this->logger->errors()->isNotEmpty();

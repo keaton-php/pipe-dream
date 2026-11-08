@@ -60,6 +60,7 @@ What a pipe receives: the subject, the shared values, the results and the log. [
 | `runId()` | A uuid that identifies the run. |
 | `flowName()`, `setFlowName($name)` | The flow's name. |
 | `results()` | The rule results (`PipeRuleResults`). |
+| `steps()` | The run as a `Collection` of `StepRecord`, one per step, in order. |
 | `logger()`, `logs()` | The `PipeLogger`, and its records. |
 | `hasErrors()`, `hasFatalErrors()` | Whether an error or fatal was recorded. |
 | `logLevel($level)` | Sets the log level (`PipeLogger::LEVEL_*`). |
@@ -96,6 +97,22 @@ The base class of a rule. [Writing rules](06-rules.md) shows it in use.
 | `PipeRuleResults::successes()`, `failures()`, `fatalFailures()`, `skips()` | Filter the results (a `Collection`). |
 | `PipeRuleResults::hasFailures()`, `hasFatalFailures()` | Whether any failed. |
 
+## StepRecord
+
+One step of a run, from `$envelope->steps()`. [Reading the log](05-reading-the-log.md) shows them in use.
+
+| Method | What it does |
+|---|---|
+| `name()` | A short name: the rule's class basename, or a closure's `Closure@file:line`. |
+| `rule()` | The full key the step logged under (a rule's FQCN, or the closure label). |
+| `hub()` | The hub the step ran in, or null when the flow did not name its hubs. |
+| `duration()` | How long the step took, in milliseconds, or null with `LEVEL_NO_TIMERS`. |
+| `returnValue()` | What the step returned: a result constant, or a custom value. |
+| `status()` | The outcome as a word: `'ok'`, `'skipped'`, `'error'` or `'fatal'`. |
+| `wasOk()`, `wasSkipped()`, `hasErrors()`, `wasFatal()` | The status as yes/no questions. |
+| `skipReason()` | Why a skipped step was skipped (its first logged line), or null. |
+| `messages()` | The info, warning and error lines the step logged, as a `Collection`. |
+
 ## PipeLogger
 
 [Reading the log](05-reading-the-log.md) shows the slices in use.
@@ -103,6 +120,7 @@ The base class of a rule. [Writing rules](06-rules.md) shows it in use.
 | Method | What it does |
 |---|---|
 | `records()`, `recordsByType($type)`, `recordsByKey($key = null)` | The records, filtered. |
+| `steps()` | The run as a `Collection` of `StepRecord`, computed from the records. |
 | `infos()`, `warnings()`, `errors()`, `fatals()`, `timers()`, `returnValues()` | One slice per record type. |
 | `info($key, $data)`, `warning()`, `error()`, `fatal()`, `returnValue()`, `timerStart()`, `timerEnd()` | Add a record. |
 | `setLevel($level)`, `level()` | The log level. |

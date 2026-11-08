@@ -3,6 +3,7 @@
 namespace Keaton\PipeDream;
 
 use Illuminate\Container\Container;
+use Illuminate\Support\Collection;
 use InvalidArgumentException;
 use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
 use Keaton\PipeDream\Contracts\PipeLoggerStrategy;
@@ -105,6 +106,128 @@ class PipeLogger
         $this->records = $records;
 
         return $this;
+    }
+
+    /**
+     * The run as a list of steps: one StepRecord per rule (or closure pipe)
+     * that executed or was skipped, in run order.
+     *
+     * Steps are computed from the records, so they read the same live or
+     * rebuilt from the database. Each is anchored on the rule's result record,
+     * carries the hub it ran in, its timing (when timers are on) and the lines
+     * it logged. Hub-level log lines are not steps and never appear here.
+     *
+     * @return Collection<int, StepRecord>
+     */
+    public function steps(): Collection
+    {
+        $records = array_values($this->records);
+        $count = count($records);
+
+        // The hub a step ran in is the last hub that announced itself before
+        // the step. Hub and manager lines carry the hub's name in context.
+        $hubAtIndex = [];
+        $currentHub = null;
+
+        foreach ($records as $i => $record) {
+            if (strpos((string) ($record['key'] ?? ''), 'PipeHub:') === 0) {
+                $name = $record['context']['name'] ?? null;
+
+                if ($name !== null && $name !== '') {
+                    $currentHub = $name;
+                }
+            }
+
+            $hubAtIndex[$i] = $currentHub;
+        }
+
+        // Each rule writes exactly one result record; that is a step's anchor.
+        $anchors = [];
+
+        foreach ($records as $i => $record) {
+            if (($record['type'] ?? null) === self::RETURN_VALUE && ! $this->isHubKey((string) ($record['key'] ?? ''))) {
+                $anchors[] = $i;
+            }
+        }
+
+        $steps = new Collection();
+        $usedStart = [];
+        $usedEnd = [];
+
+        foreach ($anchors as $position => $anchor) {
+            $record = $records[$anchor];
+            $key = (string) $record['key'];
+
+            // Messages belong to the step whose result they sit beside: between
+            // the previous anchor and the next, and logged under this key. (A
+            // rule's own error line is written just after its result record.)
+            $lower = $position > 0 ? $anchors[$position - 1] : -1;
+            $upper = $position + 1 < count($anchors) ? $anchors[$position + 1] : $count;
+
+            $messages = [];
+
+            for ($j = $lower + 1; $j < $upper; $j++) {
+                if ($j === $anchor || (string) ($records[$j]['key'] ?? '') !== $key) {
+                    continue;
+                }
+
+                if (in_array($records[$j]['type'] ?? '', [self::INFO, self::WARNING, self::ERROR, self::FATAL], true)) {
+                    $messages[] = (string) ($records[$j]['data'] ?? '');
+                }
+            }
+
+            $steps->push(new StepRecord(
+                $key,
+                $hubAtIndex[$anchor],
+                $record['data'] ?? null,
+                $this->durationFor($records, $anchor, $key, $usedStart, $usedEnd),
+                $messages
+            ));
+        }
+
+        return $steps;
+    }
+
+    /**
+     * The milliseconds between the step's timer start and end, pairing each
+     * timer once so the same rule run twice is timed separately. Null when the
+     * timers are not in the log (LEVEL_NO_TIMERS).
+     */
+    protected function durationFor(array $records, int $anchor, string $key, array &$usedStart, array &$usedEnd): ?float
+    {
+        $start = null;
+        $end = null;
+
+        for ($j = $anchor - 1; $j >= 0; $j--) {
+            if (($records[$j]['type'] ?? null) === self::TIMER_START && (string) $records[$j]['key'] === $key && empty($usedStart[$j])) {
+                $start = $j;
+                break;
+            }
+        }
+
+        for ($j = $anchor + 1, $n = count($records); $j < $n; $j++) {
+            if (($records[$j]['type'] ?? null) === self::TIMER_END && (string) $records[$j]['key'] === $key && empty($usedEnd[$j])) {
+                $end = $j;
+                break;
+            }
+        }
+
+        if ($start === null || $end === null) {
+            return null;
+        }
+
+        $usedStart[$start] = true;
+        $usedEnd[$end] = true;
+
+        return max(0.0, ((float) $records[$end]['time'] - (float) $records[$start]['time']) * 1000);
+    }
+
+    /**
+     * Whether a key belongs to the hub or manager itself, not to a rule.
+     */
+    protected function isHubKey(string $key): bool
+    {
+        return strpos($key, 'PipeHub:') === 0 || strpos($key, 'PipeManager:') === 0;
     }
 
     protected function shouldRecord(string $type): bool
