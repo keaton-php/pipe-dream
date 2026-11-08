@@ -77,6 +77,29 @@ class CallbackFailuresTest extends TestCase
         $this->assertSame(['an earlier, separate fatal', 'skipIf gave up'], $envelope->logger()->fatals()->pluck('data')->values()->all());
     }
 
+    public function test_one_fatal_object_reused_across_two_runs_is_recorded_in_each(): void
+    {
+        $shared = new PipeRuleFatal('shared');
+        $hub = PipeHub::create()->skipIf(fn () => throw $shared)->addPipe(fn () => null);
+
+        $first = $hub->sendIt(new stdClass());
+        $second = $hub->sendIt(new stdClass());
+
+        $this->assertTrue($first->hasFatalErrors());
+        $this->assertTrue($second->hasFatalErrors());
+    }
+
+    public function test_a_fatal_escalated_from_on_error_is_recorded_once(): void
+    {
+        $envelope = PipeHub::create()
+            ->addPipe(fn () => throw new RuntimeException('boom'))
+            ->onError(fn () => throw new PipeRuleFatal('escalated'))
+            ->sendIt(new stdClass());
+
+        $this->assertTrue($envelope->hasFatalErrors());
+        $this->assertCount(1, $envelope->logger()->fatals()->filter(fn ($r) => str_contains($r['data'], 'escalated')));
+    }
+
     public function test_a_fatal_from_a_rule_is_recorded_once(): void
     {
         $envelope = PipeHub::create()

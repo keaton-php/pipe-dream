@@ -32,6 +32,9 @@ class PipeEnvelope
 
     protected bool $skipAllRemainingPipes = false;
 
+    /** Fatals already written to this envelope's log, by exception object (so none is logged twice) */
+    protected ?\SplObjectStorage $recordedFatals = null;
+
     protected string $runId;
 
     protected ?string $flowName = null;
@@ -161,11 +164,31 @@ class PipeEnvelope
         return $this;
     }
 
+    /**
+     * Note that this exception's fatal is already on this envelope's log.
+     *
+     * @internal
+     */
+    public function markFatalRecorded(Throwable $exception): void
+    {
+        ($this->recordedFatals ??= new \SplObjectStorage())->attach($exception);
+    }
+
+    /** @internal */
+    public function hasRecordedFatal(Throwable $exception): bool
+    {
+        return $this->recordedFatals !== null && $this->recordedFatals->contains($exception);
+    }
+
     public function registerException(Throwable $exception, $type, $ruleClass)
     {
         // A rule's own fatal()/error() records the rule's call site, not PipeRule.
         $file = method_exists($exception, 'originFile') ? $exception->originFile() : $exception->getFile();
         $line = method_exists($exception, 'originLine') ? $exception->originLine() : $exception->getLine();
+
+        if ($type === PipeRule::FATAL) {
+            $this->markFatalRecorded($exception);
+        }
 
         $exceptionMessage = sprintf('%s [%s | line %s]', $exception->getMessage(), $file, $line);
         $this->logger->{$type}($ruleClass, $exceptionMessage, [
