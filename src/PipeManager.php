@@ -317,6 +317,7 @@ class PipeManager
         } catch (PipeHubException $configurationError) {
             throw $configurationError;
         } catch (Throwable $hookFailure) {
+            $subject->markFatalRecorded($hookFailure);
             $subject->logger()->fatal('PipeManager:onFatal', 'onFatal() failed: '.$hookFailure->getMessage(), ['exception' => get_class($hookFailure)] + $this->getPipeManagerContext());
         }
     }

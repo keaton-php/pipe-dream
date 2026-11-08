@@ -481,6 +481,7 @@ class PipeHub
             } catch (Throwable $hookFailure) {
                 // The hub is already stopping: record the hook's own failure
                 // and carry on stopping exactly as planned.
+                $subject->markFatalRecorded($hookFailure);
                 $subject->logger()->fatal('PipeHub:onFatal', 'onFatal() failed: '.$hookFailure->getMessage(), ['exception' => get_class($hookFailure)] + $this->getPipeHubContext());
             }
         }
