@@ -40,8 +40,12 @@ class PaymentStepFinished
 use Illuminate\Support\Facades\Event;
 use Keaton\PipeDream\PipeHub;
 
-Event::listen(ChargeSkipped::class, fn ($event) => print("Charge skipped for {$event->order->id}\n"));
-Event::listen(PaymentStepFinished::class, fn ($event) => print("{$event->rule} finished for {$event->order->id}\n"));
+Event::listen(ChargeSkipped::class, fn ($event) => print(
+    "Charge skipped for {$event->order->id}\n"
+));
+Event::listen(PaymentStepFinished::class, fn ($event) => print(
+    "{$event->rule} finished for {$event->order->id}\n"
+));
 
 $chargeHub = fn () => PipeHub::create()
     ->name('Charge')
@@ -66,7 +70,13 @@ $held = new Order(
 $held->holdForReview('Two or more fraud signals');
 
 $chargeHub()->sendIt($held);
-$chargeHub()->sendIt(new Order(id: 'ord_48214', items: [], shippingAddress: '500 Congress Ave, Austin', shippingCountry: 'US', billingCountry: 'US'));
+$chargeHub()->sendIt(new Order(
+    id: 'ord_48214',
+    items: [],
+    shippingAddress: '500 Congress Ave, Austin',
+    shippingCountry: 'US',
+    billingCountry: 'US',
+));
 ```
 
 <!-- output: docs/examples/scripts/events.php -->

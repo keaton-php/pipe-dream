@@ -83,7 +83,9 @@ class HandleAdClick
                         EnforceDailyClickCap::class,
                         RecordBudgetSpend::class,
                     ])
-                    ->skipIf(fn ($click) => $click->isFlagged() || $click->isTest())
+                    ->skipIf(fn ($click) => $click->isFlagged() || $click->isTest()
+                        ? 'Flagged — not charged'
+                        : null)
                     ->errorsAreFatal()           // a failed charge ends this hub...
                     ->fatalsStopThisHubOnly(),   // ...but the click is still routed
 

@@ -94,7 +94,9 @@ class HandleAdClick
                         EnforceDailyClickCap::class,
                         RecordBudgetSpend::class,
                     ])
-                    ->skipIf(fn ($click) => $click->isFlagged() || $click->isTest())
+                    ->skipIf(fn ($click) => $click->isFlagged() || $click->isTest()
+                        ? 'Flagged — not charged'
+                        : null)
                     ->errorsAreFatal()           // a failed charge ends this hub...
                     ->fatalsStopThisHubOnly(),   // ...but the click is still routed
 
@@ -137,7 +139,12 @@ A click from a hosting provider's IP, with a bot's user agent:
 use Illuminate\Http\Request;
 use Keaton\PipeDream\Models\PipeDreamLog;
 
-$click = Request::create('/click', 'GET', ['click_id' => 'clk_201', 'campaign' => 'spring-sale', 'pub' => 'pub-12', 'country' => 'US'], [], [], [
+$click = Request::create('/click', 'GET', [
+    'click_id' => 'clk_201',
+    'campaign' => 'spring-sale',
+    'pub' => 'pub-12',
+    'country' => 'US',
+], [], [], [
     'REMOTE_ADDR' => '198.51.100.7',
     'HTTP_USER_AGENT' => 'HeadlessChrome SEO-bot/2.1',
 ]);
@@ -179,7 +186,7 @@ Bot checks — Does this look like a person, not a script or a server?
   ✗ MatchKnownBotUserAgents        (0.01 ms)  User agent looks like a bot
   ✓ ScoreClickVelocity             (0.01 ms)
 
-Fulfillment & caps — Daily caps and budget, only for clicks we will pay for · skipped: Skipped: the hub's skipIf() returned true
+Fulfillment & caps — Daily caps and budget, only for clicks we will pay for · skipped: Flagged — not charged
   ↷ EnforceDailyClickCap           skipped
   ↷ RecordBudgetSpend              skipped
 

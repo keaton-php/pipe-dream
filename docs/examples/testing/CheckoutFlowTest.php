@@ -38,19 +38,27 @@ class CheckoutFlowTest extends TestCase
         $receipt = $this->checkout($this->order(['billingCountry' => 'CA', 'cardsTriedRecently' => 4]));
 
         $this->assertSame('On hold: Two or more fraud signals', $receipt->summary());
-        $this->assertSame('Held for review: Two or more fraud signals', $receipt->hubs()->firstWhere(fn ($hub) => $hub->name() === 'Charge')->skipReason());
+        $this->assertSame(
+            'Held for review: Two or more fraud signals',
+            $receipt->hubs()->firstWhere(fn ($hub) => $hub->name() === 'Charge')->skipReason(),
+        );
     }
 
     public function test_a_trusted_customer_skips_the_fraud_screen(): void
     {
         $receipt = $this->checkout($this->order(['trustedCustomer' => true]));
 
-        $this->assertSame('Trusted customer', $receipt->hubs()->firstWhere(fn ($hub) => $hub->name() === 'Fraud screen')->skipReason());
+        $this->assertSame(
+            'Trusted customer',
+            $receipt->hubs()->firstWhere(fn ($hub) => $hub->name() === 'Fraud screen')->skipReason(),
+        );
     }
 
     public function test_an_out_of_stock_item_stops_the_flow_at_validation(): void
     {
-        $receipt = $this->checkout($this->order(['items' => [['sku' => 'sold-out', 'name' => 'Poster', 'price' => 40.00]]]));
+        $receipt = $this->checkout($this->order([
+            'items' => [['sku' => 'sold-out', 'name' => 'Poster', 'price' => 40.00]],
+        ]));
 
         $this->assertTrue($receipt->wasStopped());
         $this->assertSame(['Out of stock: Poster'], $receipt->steps()->last()->messages()->all());
