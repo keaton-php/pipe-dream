@@ -93,10 +93,10 @@ class ReadmeExamplesTest extends TestCase
 
     public function test_the_readme_sends_readers_to_a_docs_page_that_exists(): void
     {
-        $this->assertStringContainsString('https://kevineaton.dev/docs/pipe-dream/quickstart/', $this->readme());
+        $this->assertStringContainsString('https://kevineaton.dev/docs/pipe-dream/your-first-flow/', $this->readme());
 
         // A docs page's address is its file name without the NN- order prefix.
-        $this->assertNotEmpty(glob(self::ROOT.'/docs/*-quickstart.md'));
+        $this->assertNotEmpty(glob(self::ROOT.'/docs/*-your-first-flow.md'));
     }
 
     // ------------------------------------------------------------------

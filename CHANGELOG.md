@@ -2,7 +2,7 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.2.0] - 2026-11-08
 
 ### Added
 
@@ -15,7 +15,8 @@ All notable changes to this package are documented here. The format follows [Kee
 ### Changed
 
 - An error or fatal's log line is now just its message: the ` [file | line N]` suffix is gone. The file and line are still in the record's context (`context.file`, `context.line`), and on `StepRecord::origin()`.
-- The README leads with the checkout flow and its receipt, then shows a click-intake receipt.
+- `ReceiptHub::wasSkipped()` is now true when every rule in a hub was skipped (as `skipIf()` does), not only when the whole hub was `skip()`ped.
+- The documentation is rewritten around one checkout flow, receipt-first: every page shows a book-style flow and prints `echo $envelope->receipt()`, with no hand-built log loops. Click intake appears once, as a second walkthrough.
 
 ## [1.1.0] - 2026-11-08
 

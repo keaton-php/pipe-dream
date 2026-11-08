@@ -1,17 +1,11 @@
-<!-- nav-group: Walkthrough -->
-# A full click flow
+<!-- nav-group: Walkthroughs -->
+# A high-volume click intake
 
-What does a real flow look like: eight hubs, one log per click, a dashboard built from the logs?
-
-## From a post title to a click
-
-Everything so far tidied one post title. The same four ideas run a real ad-click flow, only bigger: **rules** are the checks, **hubs** are the stages, a **manager** stacks the stages into one flow, and a saved **log** records every click. Where the post-title flow had three hubs, this one has eight, one controller and one log per click.
-
-## The subject
-
-The subject is `IncomingClick`, a class of your own built from the request. It has fields (`id`, `campaign`, `country`, `ip`, `userAgent`, `publisher`, `email`) and a few methods the flow calls through the envelope: `campaignSettings()` (the campaign's countries, type and bot-check switch), `flag($reason)` / `isFlagged()`, `isListed()`, `isTest()`, `markComplete()` and `destination()`.
+A different business, the same pattern. This is the shape of a click-tracking flow of the kind that has handled hundreds of millions of ad clicks: eight stages, every click saved, every click explainable.
 
 ## The flow
+
+A controller wraps the click, saves every run, and routes the visitor:
 
 <!-- example: docs/examples/HandleAdClick.php -->
 ```php
@@ -100,7 +94,9 @@ class HandleAdClick
                         EnforceDailyClickCap::class,
                         RecordBudgetSpend::class,
                     ])
-                    ->skipIf(fn ($click) => $click->isFlagged() || $click->isTest())
+                    ->skipIf(fn ($click) => $click->isFlagged() || $click->isTest()
+                        ? 'Flagged — not charged'
+                        : null)
                     ->errorsAreFatal()           // a failed charge ends this hub...
                     ->fatalsStopThisHubOnly(),   // ...but the click is still routed
 
@@ -132,56 +128,78 @@ class HandleAdClick
 }
 ```
 
-A fatal in any hub ends the click's flow, except in *Fulfillment & caps*: there `errorsAreFatal()` turns a failed charge into a fatal, and `fatalsStopThisHubOnly()` contains it to that hub, so the click is still routed.
+## One click's receipt
 
-The controller saves the log once, in `finally`, after recording how long the click took (`->persistLogs(false)` stops the manager saving it first), so every click gets exactly one row, including the ones that end early or hand off to a view.
+A click from a hosting provider's IP, with a bot's user agent:
 
-## Stage by stage
+<!-- example: docs/examples/scripts/click-receipt.php -->
+```php
+<?php
 
-### Stage 1: validate and start a session
+use Illuminate\Http\Request;
+use Keaton\PipeDream\Models\PipeDreamLog;
 
-Is this a complete, signed click for a live campaign? A fatal here (a bad click) ends the whole flow.
+$click = Request::create('/click', 'GET', [
+    'click_id' => 'clk_201',
+    'campaign' => 'spring-sale',
+    'pub' => 'pub-12',
+    'country' => 'US',
+], [], [], [
+    'REMOTE_ADDR' => '198.51.100.7',
+    'HTTP_USER_AGENT' => 'HeadlessChrome SEO-bot/2.1',
+]);
 
-### Stage 2: tracking
+app(HandleAdClick::class)($click);
 
-The attribution cookie and conversion-path tracking.
+echo PipeDreamLog::latest('id')->first()->receipt();
+```
 
-### Stage 3: geo exclusions
+<!-- output: docs/examples/scripts/click-receipt.php -->
+```text
+Ad click intake · completed with errors (0.54 ms)
 
-Is the visitor somewhere this campaign buys traffic? The campaign's countries and the advertiser's own exclusions are both enforced.
+Validate & start session — Is this a complete, signed click for a live campaign?
+  ✓ RequireTrackingParameters      (0.03 ms)
+  ✓ VerifyClickSignature           (0.01 ms)
+  ✓ RecognizeCampaign              (0.05 ms)
+  ✓ StartClickSession              (0.01 ms)
 
-### Stage 4: suppression
+Tracking — Attribution cookie and conversion-path tracking
+  ✓ SetAttributionCookie           (0.01 ms)
+  ✓ RecordConversionPath           (0.01 ms)
 
-Has this visitor asked the advertiser not to contact them? This hub is skipped for newsletter-type campaigns (`skipIf()`).
+Geo exclusions — Is the visitor somewhere this campaign buys traffic?
+  ✓ ResolveVisitorCountry          (0.01 ms)  Visitor is in US
+  ✓ EnforceCampaignCountries       (0.01 ms)
+  ✓ EnforceAdvertiserGeoExclusions (0.02 ms)
 
-### Stage 5: blacklists and graylists
+Suppression — Has this visitor asked the advertiser not to contact them?
+  ✓ CheckAdvertiserSuppressionList (0.04 ms)
 
-Checks that are never skipped. The hub's `then()` flags a click from a listed address or publisher.
+Blacklist & graylist — Checks that are never skipped
+  ✓ MatchIpBlacklist               (0.01 ms)
+  ✓ MatchPublisherBlacklist        (0.01 ms)
+  ✓ ChallengeGraylistedPublishers  (0.01 ms)
 
-### Stage 6: bot checks
+Bot checks — Does this look like a person, not a script or a server?
+  ✗ DetectHostingProviderIp        (0.02 ms)  198.51.100.7 belongs to a hosting provider
+  ✗ MatchKnownBotUserAgents        (0.01 ms)  User agent looks like a bot
+  ✓ ScoreClickVelocity             (0.01 ms)
 
-Does this look like a person, not a script or a server? Skipped when a campaign turns bot checks off; two or more signals flag the click.
+Fulfillment & caps — Daily caps and budget, only for clicks we will pay for · skipped: Flagged — not charged
+  ↷ EnforceDailyClickCap           skipped
+  ↷ RecordBudgetSpend              skipped
 
-### Stage 7: fulfillment and caps
+Route — Landing page, review queue or a safe dead end
+  ✓ ChooseDestination              (0.01 ms)
+```
 
-Daily caps and budget, only for clicks we will pay for: skipped when the click is flagged or a test.
+Two bot signals flagged the click, so the Fulfillment stage was skipped: the advertiser was never charged for it, and the click was routed anyway. Every stage is on the receipt, including the checks that passed. That proves they ran.
 
-### Stage 8: route
+## What's different from checkout
 
-Landing page, review queue or a safe dead end.
+- **Volume.** Each click is one request and one saved row. The flow itself adds a fraction of a millisecond.
+- **Containment.** Fulfillment uses `errorsAreFatal()->fatalsStopThisHubOnly()`: a failed budget charge ends that stage, but the visitor is still routed. Checkout makes the opposite choice for Charge, and both are one readable line.
+- **Never-skipped checks.** The blacklist stage has no `skipIf()`, and its description says so.
 
-## The rules in this walkthrough
-
-All of these rules are in `docs/examples/`. Some have real bodies (`CheckAdvertiserSuppressionList`, `ChallengeGraylistedPublishers`, `DetectHostingProviderIp`, `MatchKnownBotUserAgents`, `RecordBudgetSpend`, and the small ones the tests rely on: `RequireTrackingParameters`, `RecognizeCampaign`, `StartClickSession`, `ResolveVisitorCountry`, `EnforceCampaignCountries`, `MatchIpBlacklist`, `ChooseDestination`); the rest are placeholders that only return `SUCCESS`, named for what your own rule would do (`VerifyClickSignature`, `SetAttributionCookie`, `RecordConversionPath`, `EnforceAdvertiserGeoExclusions`, `MatchPublisherBlacklist`, `ScoreClickVelocity`, `EnforceDailyClickCap`).
-
-## See it running
-
-A demo app pushes 500 synthetic ad clicks through a five-stage, 14-rule flow like this one. Every page is built from the flow definition and the persisted logs, with nothing written by hand. The flow page is rendered from the code itself:
-
-![The flow, rendered from its code](01-flow.png)
-
-| Dashboard built from the logs | One click's full story | The whole flow is one readable file |
-|---|---|---|
-| ![Dashboard](02-dashboard.png) | ![One click's story](03-click-story.png) | ![Source](04-code.png) |
-
-Next: [Return values and stop tables](20-reference-tables.md).
+**Next:** [Outcome tables](18-outcome-tables.md).

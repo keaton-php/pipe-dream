@@ -62,10 +62,10 @@ class MarkdownFormat implements ReceiptFormat
             $heading .= ' — '.$this->escape($hub->description());
         }
 
-        if ($hub->wasSkipped()) {
-            $heading .= ' · skipped';
-        } elseif ($hub->skipReason() !== null) {
+        if ($hub->skipReason() !== null) {
             $heading .= ' · skipped: '.$this->escape($hub->skipReason());
+        } elseif ($hub->wasSkipped()) {
+            $heading .= ' · skipped';
         }
 
         return $heading;

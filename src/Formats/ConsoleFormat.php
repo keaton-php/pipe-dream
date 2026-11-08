@@ -90,10 +90,10 @@ class ConsoleFormat implements ReceiptFormat
             $heading .= ' — '.$hub->description();
         }
 
-        if ($hub->wasSkipped()) {
-            $heading .= ' · skipped';
-        } elseif ($hub->skipReason() !== null) {
+        if ($hub->skipReason() !== null) {
             $heading .= ' · skipped: '.$hub->skipReason();
+        } elseif ($hub->wasSkipped()) {
+            $heading .= ' · skipped';
         }
 
         return $heading;

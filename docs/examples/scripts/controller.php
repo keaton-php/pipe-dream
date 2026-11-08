@@ -1,15 +1,33 @@
 <?php
 
-$publish = app(PublishPost::class);
+$placeOrder = app(PlaceOrder::class);
 
-$posts = [
-    (object) ['id' => 1, 'title' => '  hello,   PIPE dream  ', 'status' => 'ready'],
-    (object) ['id' => 2, 'title' => '   ', 'status' => 'ready'],
-    (object) ['id' => 3, 'title' => 'Work in progress', 'status' => 'draft'],
+$orders = [
+    new Order(
+        id: 'ord_1',
+        items: [['sku' => 'cap-nvy', 'name' => 'Navy cap', 'price' => 25.00]],
+        shippingAddress: '500 Congress Ave, Austin',
+        shippingCountry: 'US',
+        billingCountry: 'US',
+    ),
+    new Order(
+        id: 'ord_2',
+        items: [['sku' => 'cap-nvy', 'name' => 'Navy cap', 'price' => 25.00]],
+        shippingAddress: null,
+        shippingCountry: 'US',
+        billingCountry: 'US',
+    ),
+    new Order(
+        id: 'ord_3',
+        items: [['sku' => 'sold-out', 'name' => 'Limited-run poster', 'price' => 40.00]],
+        shippingAddress: '500 Congress Ave, Austin',
+        shippingCountry: 'US',
+        billingCountry: 'US',
+    ),
 ];
 
-foreach ($posts as $post) {
-    $response = $publish($post);
-
-    echo $post->id, ': ', $response->getStatusCode(), ' ', $response->headers->get('Location') ?? $response->getContent(), PHP_EOL;
+foreach ($orders as $order) {
+    $response = $placeOrder($order);
+    echo $order->id, ': ', $response->getStatusCode(), ' ',
+        $response->headers->get('Location') ?? $response->getContent(), PHP_EOL;
 }

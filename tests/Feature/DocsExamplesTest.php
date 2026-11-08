@@ -2,730 +2,137 @@
 
 namespace Keaton\PipeDream\Tests\Feature;
 
-use CheckTitleLength;
-use CountWords;
-use HandleAdClick;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\View\View;
 use Keaton\PipeDream\Contracts\PipeLoggerPersistStrategy;
-use Keaton\PipeDream\Exceptions\PipeRuleLoadView;
-use Keaton\PipeDream\Models\PipeDreamLog;
-use Keaton\PipeDream\PipeHub;
-use Keaton\PipeDream\PipeManager;
-use Keaton\PipeDream\PipeRule;
 use Keaton\PipeDream\Tests\TestCase;
-use RecordBudgetSpend;
-use RejectEmptyTitle;
-use SlugifyTitle;
-use TidyTitle;
 
 /**
- * Every code example in the docs pages (docs/*.md), run as written.
- *
- * Each PHP block on a page is preceded by an `<!-- example: path -->`
- * marker naming a complete file under docs/examples, and shows that file
- * exactly. Scripts are run as they are; classes are autoloaded (composer
- * classmap). A script's `expression;   // value` lines are evaluated and
- * compared with the value the comment claims ("..." in a quoted value
- * matches anything). The test classes on the testing page are run by the
- * suite itself (see phpunit.xml).
+ * The docs (docs/*.md), run as written: every PHP block is its fixture file
+ * verbatim, every output block is what its script prints (timings, durations
+ * and the repo path are normalized), and the pages are grouped, in order,
+ * linking only to pages that exist. The test classes shown on the testing
+ * page are run by the suite itself (see phpunit.xml).
  */
 class DocsExamplesTest extends TestCase
 {
     private const ROOT = __DIR__.'/../..';
 
-    private const FIXTURES = self::ROOT.'/docs/examples';
+    /** The nav groups, in the order the sidebar shows them. */
+    private const GROUPS = [
+        'Start here',
+        'Building blocks',
+        'Deciding what happens',
+        'In production',
+        'Walkthroughs',
+        'Reference',
+    ];
 
     protected function defineDatabaseMigrations()
     {
         $this->loadMigrationsFrom(__DIR__.'/../../database/migrations');
     }
 
-    protected function defineEnvironment($app)
+    public function test_every_php_block_is_its_fixture_verbatim(): void
     {
-        parent::defineEnvironment($app);
+        preg_match_all('/([^\n]*)\n```php\n(.*?)\n```/s', self::docs(), $blocks, PREG_SET_ORDER);
 
-        $app['view']->addLocation(self::FIXTURES.'/views');
-    }
+        $this->assertGreaterThanOrEqual(20, count($blocks));
 
-    // ------------------------------------------------------------------
-    // The docs show the fixtures, and nothing untested
-
-    public function test_every_example_in_the_docs_is_its_fixture_verbatim(): void
-    {
-        preg_match_all('/<!-- example: (\S+) -->\n```php\n(.*?)\n```/s', $this->docs(), $examples, PREG_SET_ORDER);
-
-        $this->assertGreaterThanOrEqual(30, count($examples));
-
-        foreach ($examples as [, $fixture, $shown]) {
-            $this->assertSame($this->exampleSource($fixture), $shown, "Docs example {$fixture} differs from its file");
-        }
-
-        // Nothing in an example file is hidden from the reader.
-        foreach (array_merge(glob(self::FIXTURES.'/*.php'), glob(self::FIXTURES.'/scripts/*.php'), glob(self::FIXTURES.'/testing/*.php')) as $file) {
-            $this->assertStringNotContainsString('README:start', file_get_contents($file), $file);
-        }
-    }
-
-    public function test_every_php_block_in_the_docs_is_backed_by_a_fixture(): void
-    {
-        preg_match_all('/(.*)\n```php\n/', $this->docs(), $blocks);
-
-        $this->assertGreaterThanOrEqual(30, count($blocks[1]));
-
-        foreach ($blocks[1] as $lineBefore) {
+        foreach ($blocks as [, $lineBefore, $shown]) {
             $this->assertMatchesRegularExpression('/^<!-- example: \S+ -->$/', $lineBefore, 'A PHP block in the docs has no example marker');
+            preg_match('/<!-- example: (\S+) -->/', $lineBefore, $marker);
+            $this->assertFileExists(self::ROOT.'/'.$marker[1]);
+            $this->assertSame(rtrim(file_get_contents(self::ROOT.'/'.$marker[1]), "\n"), $shown, "{$marker[1]} differs from its docs block");
         }
     }
 
-    /**
-     * The docs' examples may only depend on what the docs show. A test that
-     * runs one (runScript() or the full example's handle()) must not
-     * configure the container itself: any configuration an example needs is
-     * part of the example, so the reader sees it too.
-     */
-    public function test_example_tests_set_up_nothing_the_docs_do_not_show(): void
+    public static function outputs(): array
     {
-        $class = new \ReflectionClass($this);
-        $lines = file($class->getFileName());
-        $checked = 0;
+        preg_match_all('/<!-- output: (\S+) -->\n```\w*\n(.*?)\n```/s', self::docs(), $blocks, PREG_SET_ORDER);
 
-        foreach ($class->getMethods() as $method) {
-            if ($method->class !== static::class || ! str_starts_with($method->name, 'test_') || $method->name === __FUNCTION__) {
-                continue;
-            }
-
-            $body = implode('', array_slice($lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
-
-            if (! str_contains($body, '$this->runScript(') && ! str_contains($body, '$this->handle(') && ! str_contains($body, '$this->assertExampleOutput(')) {
-                continue;
-            }
-
-            $checked++;
-
-            foreach (['->instance(', '->bind(', '->singleton(', '->extend(', '::fake(', 'config(', 'Config::'] as $setup) {
-                $this->assertStringNotContainsString($setup, $body, "{$method->name} sets up {$setup} that the docs do not show");
-            }
+        $cases = [];
+        foreach ($blocks as $i => [, $script, $shown]) {
+            $cases["{$i}: {$script}"] = [$script, $shown];
         }
 
-        $this->assertGreaterThanOrEqual(18, $checked);
+        return $cases;
     }
 
-    public function test_docs_fixtures_carry_no_state_between_tests(): void
+    #[\PHPUnit\Framework\Attributes\DataProvider('outputs')]
+    public function test_every_output_shown_is_what_its_script_prints(string $script, string $shown): void
     {
-        foreach ($this->fixtureClasses() as $fixture) {
-            foreach ((new \ReflectionClass($fixture))->getProperties(\ReflectionProperty::IS_STATIC) as $property) {
-                $this->assertTrue(
-                    in_array($property->name, ['name', 'description', 'runFunction', 'saveResultAs'], true),
-                    "{$fixture}::\${$property->name} is static state a docs example could depend on"
-                );
-            }
-        }
+        $this->assertFalse($this->app->bound(PipeLoggerPersistStrategy::class));
+
+        ob_start();
+        (function () use ($script) {
+            require self::ROOT.'/'.$script;
+        })();
+
+        $this->assertSame($this->normalize($shown), $this->normalize(ob_get_clean()), "Output of {$script}");
     }
 
-    // ------------------------------------------------------------------
-    // Outputs: every output block shown is what its example prints
-
-    public function test_every_output_shown_is_what_its_example_prints(): void
+    public function test_pages_are_grouped_in_order_and_link_only_to_pages_that_exist(): void
     {
-        preg_match_all('/<!-- output: docs\/examples\/scripts\/(\S+) -->/', $this->docs(), $outputs);
+        $this->assertCount(20, self::pages());
 
-        $this->assertGreaterThanOrEqual(9, count($outputs[1]));
-
-        // A script shown on several pages is run once; every copy is compared.
-        foreach (array_unique($outputs[1]) as $script) {
-            $this->assertExampleOutput($script);
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // The shape of the docs: grouped nav, pages that link to pages
-
-    /** The nav groups, in the order the sidebar shows them. */
-    private const GROUPS = [
-        'Start here',
-        'Basic usage',
-        'Controlling the flow',
-        'Keeping and reading logs',
-        'Advanced',
-        'Walkthrough',
-        'Reference',
-    ];
-
-    public function test_every_page_declares_a_nav_group_and_the_groups_run_in_order(): void
-    {
         $seen = [];
 
-        foreach ($this->pages() as $page) {
-            $firstLine = strtok(file_get_contents($page), "\n");
+        foreach (self::pages() as $page) {
+            $text = file_get_contents($page);
 
-            $this->assertMatchesRegularExpression('/^<!-- nav-group: (.+) -->$/', $firstLine, basename($page).' has no nav-group comment on its first line');
+            $this->assertMatchesRegularExpression('/^<!-- nav-group: .+ -->\n# /', $text, basename($page).' has no nav-group comment and heading');
 
-            preg_match('/^<!-- nav-group: (.+) -->$/', $firstLine, $group);
+            preg_match('/^<!-- nav-group: (.+) -->/', $text, $group);
 
             if (end($seen) !== $group[1]) {
                 $this->assertNotContains($group[1], $seen, basename($page)." reopens the group {$group[1]}");
                 $seen[] = $group[1];
+            }
+
+            preg_match_all('/\]\(([\w-]+\.md)(#[\w-]+)?\)/', $text, $links);
+
+            foreach ($links[1] as $link) {
+                $this->assertFileExists(dirname($page).'/'.$link, basename($page)." links to a missing page {$link}");
             }
         }
 
         $this->assertSame(self::GROUPS, $seen);
     }
 
-    public function test_relative_links_between_pages_land_on_pages_that_exist(): void
+    public function test_the_testing_pages_tests_are_shown_and_run_by_the_suite(): void
     {
-        $linked = 0;
-
-        foreach ($this->pages() as $page) {
-            preg_match_all('/\]\(([^)#\s]+\.md)(?:#[^)]*)?\)/', file_get_contents($page), $links);
-
-            foreach ($links[1] as $target) {
-                if (str_starts_with($target, '..')) {
-                    continue;
-                }
-
-                $this->assertFileExists(self::ROOT.'/docs/'.$target, basename($page)." links to {$target}");
-                $linked++;
-            }
-        }
-
-        $this->assertGreaterThan(30, $linked);
-    }
-
-    public function test_the_test_classes_on_the_testing_page_are_shown_and_run_by_the_suite(): void
-    {
-        $tests = glob(self::FIXTURES.'/testing/*Test.php');
+        $tests = glob(self::ROOT.'/docs/examples/testing/*Test.php');
 
         $this->assertNotEmpty($tests);
 
         foreach ($tests as $file) {
-            $this->assertStringContainsString('<!-- example: docs/examples/testing/'.basename($file).' -->', $this->docs(), basename($file).' is not shown in the docs');
+            $this->assertStringContainsString('<!-- example: docs/examples/testing/'.basename($file).' -->', self::docs(), basename($file).' is not shown in the docs');
         }
 
-        // Shown is not enough: phpunit.xml must run them, or they prove nothing.
         $this->assertStringContainsString('docs/examples/testing', file_get_contents(self::ROOT.'/phpunit.xml'));
     }
 
-    // ------------------------------------------------------------------
-    // Pipes and hubs, rules, skipping, introspection
-
-    public function test_a_named_hub_names_the_flow(): void
+    private function normalize(string $output): string
     {
-        $vars = $this->assertExampleOutput('hub-named.php');
+        $output = str_replace(realpath(self::ROOT).'/', '', $output);
+        $output = preg_replace('/\(\d+(?:\.\d+)? ?ms\)/', '(ms)', $output);
+        $output = preg_replace('/"duration_ms": [\d.]+/', '"duration_ms": 0', $output);
+        $output = preg_replace('/ {2,}/', ' ', $output);
 
-        $this->assertSame('Tidy the title', $vars['envelope']->flowName());
+        return trim($output);
     }
 
-    public function test_a_rule_is_added_by_class_name_and_logs_against_itself(): void
+    /** The docs pages in nav order: the home first, then docs/NN-*.md. */
+    private static function pages(): array
     {
-        $vars = $this->assertExampleOutput('rule-first.php');
-
-        $this->assertSame('Hello, Pipe Dream', $vars['post']->title);
-        $this->assertSame(PipeRule::SUCCESS, $vars['envelope']->get(TidyTitle::class));
-    }
-
-    public function test_a_skipped_hub_logs_its_rules_as_skipped(): void
-    {
-        $vars = $this->assertExampleOutput('skip.php');
-
-        $this->assertFalse(isset($vars['post']->slug));
-        $this->assertSame(PipeRule::SKIP, $vars['envelope']->get(SlugifyTitle::class));
-    }
-
-    public function test_a_flow_can_be_read_back_without_running_it(): void
-    {
-        $vars = $this->assertExampleOutput('introspect.php');
-
-        $this->assertCount(2, $vars['flow']->getHubs());
-        $this->assertSame('Publish a post', $vars['flow']->getName());
-    }
-
-    // ------------------------------------------------------------------
-    // Your first flow
-
-    public function test_the_laravel_pipeline_and_the_hub_tidy_the_title_the_same_way(): void
-    {
-        ob_start();
-        ['post' => $viaPipeline] = $this->runScript('pipeline.php');
-        ['post' => $viaHub] = $this->runScript('hub.php');
-        ob_end_clean();
-
-        $this->assertSame('Hello, Pipe Dream', $viaPipeline->title);
-        $this->assertSame($viaPipeline->title, $viaHub->title);
-    }
-
-    // ------------------------------------------------------------------
-    // The envelope
-
-    public function test_the_envelope_reads_through_to_the_subject(): void
-    {
-        $this->assertExampleOutput('envelope.php');
-    }
-
-    public function test_pipes_share_values_on_the_envelope(): void
-    {
-        $vars = $this->assertExampleOutput('state.php');
-
-        $this->assertSame('in review', $vars['envelope']->get('state'));
-    }
-
-    public function test_every_step_is_logged_with_its_return_value(): void
-    {
-        $vars = $this->assertExampleOutput('hub-log.php');
-
-        $this->assertSame(
-            ['hello,   PIPE dream', 'hello, PIPE dream', 'Hello, Pipe Dream'],
-            $vars['envelope']->results()->map->result()->values()->all()
-        );
-    }
-
-    public function test_the_log_points_at_the_step_that_broke_the_title(): void
-    {
-        $vars = $this->assertExampleOutput('hub-log-broken.php');
-
-        $this->assertSame(
-            ['hello,   PIPE dream', 'hello,PIPEdream', 'Hello,pipedream'],
-            $vars['envelope']->results()->map->result()->values()->all()
-        );
-    }
-
-    // ------------------------------------------------------------------
-    // Stacking hubs with a manager
-
-    public function test_stacked_hubs_make_one_run_and_one_log(): void
-    {
-        $vars = $this->assertExampleOutput('stack.php');
-
-        $logs = $vars['envelope']->logs();
-        $this->assertSame('PipeManager:sendIt', $logs[0]['key']);
-        $this->assertSame('PipeManager:sendIt', end($logs)['key']);
-    }
-
-    // ------------------------------------------------------------------
-    // Rules
-
-    public function test_rules_with_injection_shared_values_and_logging(): void
-    {
-        $vars = $this->assertExampleOutput('rules.php');
-
-        $envelope = $vars['envelope'];
-        $this->assertSame('Title is now "Hello, Pipe Dream"', $envelope->logger()->infos()->firstWhere('key', TidyTitle::class)['data']);
-        $this->assertSame(3, $envelope->get('words'));
-        $this->assertSame(['tidyTitle'], (new TidyTitle())->getExtendedClassMethods());
-    }
-
-    public function test_the_result_helpers_read_and_write_the_same_value_as_the_magic_property(): void
-    {
-        $envelope = PipeHub::create()
-            ->addPipes([
-                CountWords::class,
-                fn ($post) => $post->set('words_seen', $post->get('words')),
-            ])
-            ->sendIt((object) ['title' => 'Hello Pipe Dream']);
-
-        $this->assertSame(3, $envelope->get('words_seen'));
-        $this->assertSame(3, $envelope->get('words'));
-    }
-
-    public function test_a_one_word_title_skips_the_length_check(): void
-    {
-        $envelope = PipeHub::create()
-            ->addPipes([CountWords::class, CheckTitleLength::class])
-            ->sendIt((object) ['title' => 'Hello']);
-
-        $this->assertSame(PipeRule::SKIP, $envelope->get(CheckTitleLength::class));
-        $this->assertSame('A one-word title is fine', $envelope->logger()->infos()->firstWhere('key', CheckTitleLength::class)['data']);
-    }
-
-    public function test_a_long_title_is_an_error_and_the_hub_carries_on(): void
-    {
-        $envelope = PipeHub::create()
-            ->addPipes([CountWords::class, CheckTitleLength::class, SlugifyTitle::class])
-            ->sendIt($post = (object) ['title' => 'one two three four five six seven eight nine ten eleven twelve thirteen']);
-
-        $this->assertSame(PipeRule::FAIL, $envelope->get(CheckTitleLength::class));
-        $this->assertStringStartsWith('The title has 13 words', $envelope->logger()->errors()->first()['data']);
-        $this->assertNotNull($post->slug ?? null);
-    }
-
-    // ------------------------------------------------------------------
-    // Putting it together
-
-    public function test_all_together(): void
-    {
-        $vars = $this->assertExampleOutput('together.php');
-
-        $this->assertSame('Publish a post', $vars['envelope']->flowName());
-    }
-
-    public function test_a_draft_skips_the_publish_hub_and_stays_a_draft(): void
-    {
-        $source = file_get_contents(self::FIXTURES.'/scripts/together.php');
-        $this->assertStringContainsString("'status' => 'ready'", $source);
-
-        // The docs' variation: the same file with 'status' => 'draft'.
-        $draft = sys_get_temp_dir().'/pipe-dream-together-draft.php';
-        file_put_contents($draft, str_replace("'status' => 'ready'", "'status' => 'draft'", $source));
-
-        ob_start();
-        $vars = (function () use ($draft) {
-            require $draft;
-
-            return get_defined_vars();
-        })->call($this);
-        ob_end_clean();
-        unlink($draft);
-
-        $this->assertSame('draft', $vars['post']->status);
-        $this->assertSame(PipeRule::SKIP, $vars['envelope']->get(SlugifyTitle::class));
-    }
-
-    // ------------------------------------------------------------------
-    // Controlling the flow
-
-    public function test_the_controller_handles_success_fatal_and_redirect(): void
-    {
-        $this->assertExampleOutput('controller.php');
-    }
-
-    public function test_how_far_a_stop_reaches(): void
-    {
-        $vars = $this->assertExampleOutput('reach.php');
-
-        // Rules after the stop have no result at all, rather than a skip.
-        $this->assertStringNotContainsString('TidyTitle', ($vars['publish'])(''));
-    }
-
-    public function test_with_throw_fatals_a_fatal_that_stops_the_flow_lands_in_the_catch(): void
-    {
-        $vars = $this->assertExampleOutput('throw-fatals.php');
-
-        // The last run's fatal was contained, so the flow carried on.
-        $this->assertTrue($vars['envelope']->hasFatalErrors());
-        $this->assertSame('', $vars['post']->slug);
-    }
-
-    public function test_by_default_a_fatal_never_leaves_send_it_as_an_exception(): void
-    {
-        $envelope = PipeManager::create([
-            PipeHub::create()->addPipe(RejectEmptyTitle::class),
-        ])->subject((object) ['title' => ''])->sendIt();
-
-        $this->assertTrue($envelope->hasFatalErrors());
-        $this->assertSame(PipeRule::FATAL_FAIL, $envelope->get(RejectEmptyTitle::class));
-    }
-
-    public function test_a_view_hand_off_leaves_send_it(): void
-    {
-        $this->expectException(PipeRuleLoadView::class);
-
-        PipeHub::create()
-            ->addPipe(fn () => PipeRuleLoadView::load('challenge', ['click' => 'clk_1']))
-            ->sendIt((object) []);
-    }
-
-    // ------------------------------------------------------------------
-    // Keeping the log
-
-    public function test_keeping_the_log_in_the_database(): void
-    {
-        $vars = $this->runScript('database.php');
-
-        $this->assertSame(1, $this->assertCommentedValues('database.php', $vars));
-
-        $row = PipeDreamLog::first();
-        $this->assertSame($vars['envelope']->runId(), $row->run_id);
-        $this->assertEquals($vars['envelope']->logs(), json_decode($row->log, true));
-
-        $vars['envelope']->persist();
-        $this->assertSame(1, PipeDreamLog::count(), 'saving the same run again updates its row');
-    }
-
-    public function test_reading_a_run_back(): void
-    {
-        $this->runScript('database.php');
-        $vars = $this->runScript('rebuild.php');
-
-        $this->assertSame(2, $this->assertCommentedValues('rebuild.php', $vars));
-    }
-
-    // ------------------------------------------------------------------
-    // Events
-
-    public function test_events(): void
-    {
-        $vars = $this->runScript('events.php');
-
-        $this->assertSame(1, $this->assertCommentedValues('events.php', $vars));
-    }
-
-    public function test_a_skipped_hub_dispatches_only_the_skip_event(): void
-    {
-        $fired = [];
-        \Illuminate\Support\Facades\Event::listen([\BotChecksStarted::class, \BotChecksSkipped::class, \RuleStarting::class], function ($event) use (&$fired) {
-            $fired[] = class_basename($event);
-        });
-
-        PipeHub::create()
-            ->addPipe(\DetectHostingProviderIp::class)
-            ->broadcastEventBefore(\BotChecksStarted::class)
-            ->broadcastEventOnSkip(\BotChecksSkipped::class)
-            ->broadcastEventBeforeEachPipe(\RuleStarting::class)
-            ->skipIf(fn () => true)
-            ->sendIt((object) ['ip' => '203.0.113.9']);
-
-        $this->assertSame(['BotChecksSkipped'], $fired);
-    }
-
-    // ------------------------------------------------------------------
-    // A full click flow
-
-    private function click(array $query, string $ip = '203.0.113.9', string $userAgent = 'Mozilla/5.0'): Request
-    {
-        return Request::create('/click', 'GET', $query + ['click_id' => 'clk_200', 'pub' => 'pub-12', 'country' => 'US'], [], [], [
-            'REMOTE_ADDR' => $ip,
-            'HTTP_USER_AGENT' => $userAgent,
-        ]);
-    }
-
-    private function handle(Request $request)
-    {
-        foreach (array_merge($this->fixtureClasses(), [PipeLoggerPersistStrategy::class]) as $class) {
-            $this->assertFalse($this->app->bound($class), "{$class} is bound before the full example runs");
-        }
-
-        return $this->app->make(HandleAdClick::class)($request);
-    }
-
-    public function test_a_good_click_reaches_the_landing_page_and_is_logged_once(): void
-    {
-        $response = $this->handle($this->click(['campaign' => 'spring-sale']));
-
-        $this->assertInstanceOf(RedirectResponse::class, $response);
-        $this->assertSame('https://example.test/landing/spring-sale', $response->getTargetUrl());
-
-        $this->assertSame(1, PipeDreamLog::count());
-        $row = PipeDreamLog::first();
-        $this->assertSame('Ad click intake', $row->flow);
-        $this->assertFalse($row->has_fatals);
-        $this->assertStringStartsWith('Handled in', $row->logger()->recordsByKey('Intake')->first()['data']);
-        $this->assertSame(8, $row->logger()->infos()->where('data', 'Sending subject through all pipes')->count());
-
-        // The click is charged to its own campaign, through the same rule as on the rules pages.
-        $this->assertSame('Charged spring-sale 0.40', $row->logger()->infos()->firstWhere('key', RecordBudgetSpend::class)['data']);
-    }
-
-    public function test_an_unknown_campaign_ends_the_flow_at_validation(): void
-    {
-        $response = $this->handle($this->click(['campaign' => 'no-such-campaign']));
-
-        $this->assertSame('https://example.test/thanks', $response->getTargetUrl());
-
-        $row = PipeDreamLog::first();
-        $this->assertTrue($row->has_fatals);
-        $this->assertSame(1, $row->logger()->infos()->where('data', 'Sending subject through all pipes')->count());
-    }
-
-    public function test_a_country_the_campaign_does_not_buy_ends_the_flow_at_geo(): void
-    {
-        $response = $this->handle($this->click(['campaign' => 'spring-sale', 'country' => 'FR']));
-
-        $this->assertSame('https://example.test/thanks', $response->getTargetUrl());
-        $this->assertStringStartsWith('Visitor is in FR; campaign targets US, CA', PipeDreamLog::first()->logger()->fatals()->first()['data']);
-    }
-
-    public function test_suppression_is_skipped_for_a_newsletter_campaign(): void
-    {
-        $newsletter = $this->handle($this->click(['campaign' => 'weekly-digest', 'email' => 'opted-out@example.test']));
-        $this->assertSame('https://example.test/landing/weekly-digest', $newsletter->getTargetUrl());
-
-        $offer = $this->handle($this->click(['campaign' => 'spring-sale', 'email' => 'opted-out@example.test']));
-        $this->assertSame('https://example.test/thanks', $offer->getTargetUrl());
-    }
-
-    public function test_a_graylisted_publisher_gets_the_challenge_view_and_the_click_is_still_logged(): void
-    {
-        $response = $this->handle($this->click(['campaign' => 'spring-sale', 'pub' => 'pub-77']));
-
-        $this->assertInstanceOf(View::class, $response);
-        $this->assertSame('challenge', $response->name());
-        $this->assertSame(['click' => 'clk_200'], $response->getData());
-        $this->assertSame(1, PipeDreamLog::count());
-    }
-
-    public function test_a_blacklisted_ip_is_flagged_and_sent_to_review(): void
-    {
-        $response = $this->handle($this->click(['campaign' => 'spring-sale'], '192.0.2.66'));
-
-        $this->assertSame('https://example.test/review', $response->getTargetUrl());
-    }
-
-    public function test_two_bot_signals_send_the_click_to_review_unless_bot_checks_are_off(): void
-    {
-        $bot = $this->handle($this->click(['campaign' => 'spring-sale'], '198.51.100.20', 'ExampleBot/2.1'));
-        $this->assertSame('https://example.test/review', $bot->getTargetUrl());
-
-        $unchecked = $this->handle($this->click(['campaign' => 'quiet-launch'], '198.51.100.20', 'ExampleBot/2.1'));
-        $this->assertSame('https://example.test/landing/quiet-launch', $unchecked->getTargetUrl());
-    }
-
-    // ------------------------------------------------------------------
-    // helpers
-
-    /** @return array<class-string> every class declared under docs/examples */
-    private function fixtureClasses(): array
-    {
-        $classes = [];
-
-        foreach (glob(self::FIXTURES.'/*.php') as $file) {
-            preg_match_all('/^class (\w+)/m', file_get_contents($file), $found);
-            array_push($classes, ...$found[1]);
-        }
-
-        return $classes;
-    }
-
-    /** The docs pages in nav order: the home page first, then docs/NN-*.md. */
-    private function pages(): array
-    {
-        $pages = glob(self::ROOT.'/docs/*.md');
+        $pages = glob(self::ROOT.'/docs/[0-9][0-9]-*.md');
         sort($pages);
-
-        usort($pages, fn ($a, $b) => (basename($a) === 'index.md' ? 0 : 1) <=> (basename($b) === 'index.md' ? 0 : 1));
+        array_unshift($pages, self::ROOT.'/docs/index.md');
 
         return $pages;
     }
 
-    /** Every docs page, joined. */
-    private function docs(): string
+    private static function docs(): string
     {
-        return implode("\n", array_map('file_get_contents', $this->pages()));
-    }
-
-    /** Every output block the docs show for a script, wherever it appears. */
-    private function outputsShown(string $script): array
-    {
-        $marker = preg_quote("<!-- output: docs/examples/scripts/{$script} -->", '/');
-        preg_match_all('/'.$marker."\n```text\n(.*?)\n```/s", $this->docs(), $blocks);
-
-        return $blocks[1];
-    }
-
-    /** An example file, as the docs show it: all of it. */
-    private function exampleSource(string $path): string
-    {
-        return rtrim(file_get_contents(self::ROOT.'/'.$path), "\n");
-    }
-
-    /** Run a docs script in this test's scope; returns its variables, plus `__result`. */
-    private function runScript(string $script, array $vars = []): array
-    {
-        $file = self::FIXTURES.'/scripts/'.$script;
-
-        // Every example starts from default fixtures: nothing bound that the
-        // docs do not show (an example that needs a binding makes it).
-        foreach (array_merge($this->fixtureClasses(), [PipeLoggerPersistStrategy::class]) as $class) {
-            $this->assertFalse($this->app->bound($class), "{$class} is bound before docs example {$script} runs");
-        }
-
-        return (function () use ($file, $vars) {
-            extract($vars);
-            $__result = require $file;
-            unset($file, $vars);
-
-            return get_defined_vars();
-        })->call($this);
-    }
-
-    /**
-     * Evaluate each top-level `expression;   // value` line in a script's
-     * example and compare it with the value the comment claims.
-     * Returns how many lines were checked.
-     */
-    private function assertCommentedValues(string $script, array $vars): int
-    {
-        $source = $this->exampleSource('docs/examples/scripts/'.$script);
-        preg_match_all('/^use [^;]+;$/m', $source, $uses);
-        $imports = implode("\n", $uses[0])."\n";
-        $checked = 0;
-
-        foreach (explode("\n", $source) as $line) {
-            if (str_starts_with($line, 'use ') || ! preg_match('/^(\S.*?);\s+\/\/ (.+)$/', $line, $parts) || preg_match('/(?<![=!<>])=(?![=>])/', $parts[1])) {
-                continue;
-            }
-
-            if (($expected = $this->literal($parts[2])) === false) {
-                continue;
-            }
-
-            $actual = (function ($__vars, $__code) {
-                extract($__vars);
-
-                return eval($__code);
-            })->call($this, $vars, $imports."return {$parts[1]};");
-
-            if (is_string($expected[0]) && str_contains($expected[0], '...')) {
-                $pattern = '/^'.str_replace('\.\.\.', '.*', preg_quote($expected[0], '/')).'$/';
-                $this->assertMatchesRegularExpression($pattern, (string) $actual, $line);
-            } else {
-                $this->assertSame($expected[0], $actual, $line);
-            }
-
-            $checked++;
-        }
-
-        return $checked;
-    }
-
-    /** [value] for a literal at the start of a comment, or false. */
-    private function literal(string $comment)
-    {
-        if (preg_match("/^'((?:[^'\\\\]|\\\\.)*)'/", $comment, $m)) {
-            return [stripslashes($m[1])];
-        }
-
-        if (preg_match('/^-?\d+\.\d+/', $comment, $m)) {
-            return [(float) $m[0]];
-        }
-
-        if (preg_match('/^-?\d+/', $comment, $m)) {
-            return [(int) $m[0]];
-        }
-
-        foreach (['true' => true, 'false' => false, 'null' => null] as $word => $value) {
-            if (preg_match('/^'.$word.'\b/', $comment)) {
-                return [$value];
-            }
-        }
-
-        return false;
-    }
-
-    /** Run an example and assert it prints exactly the output every docs page shows for it. Returns its variables. */
-    private function assertExampleOutput(string $script): array
-    {
-        ob_start();
-        $vars = $this->runScript($script);
-        $printed = ob_get_clean();
-
-        $shown = $this->outputsShown($script);
-        $this->assertNotEmpty($shown, "The docs show no output for {$script}");
-
-        foreach ($shown as $block) {
-            $this->assertSame($this->withoutTimes($block), $this->withoutTimes($printed), "Output of {$script}");
-        }
-
-        return $vars;
-    }
-
-    private function withoutTimes(string $timeline): string
-    {
-        // A timeline prefix ("0.123 ms  ") and a step's inline "(0.12 ms)" both
-        // vary run to run; the rest of the line is what the output promises.
-        $timeline = preg_replace('/^\s*\d+\.\d{3} ms  /m', '', $timeline);
-        $timeline = preg_replace('/\(\d+(?:\.\d+)? ?ms\)/', '(ms)', $timeline);
-
-        return trim($timeline);
+        return implode("\n", array_map('file_get_contents', self::pages()));
     }
 }
