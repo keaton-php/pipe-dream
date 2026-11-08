@@ -4,6 +4,16 @@ All notable changes to this package are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-08
+
+### Added
+
+- **`$envelope->steps()`: the run as a list of steps.** A `Collection` of `StepRecord` objects, one per rule (or closure pipe) that executed or was skipped, in run order. It is computed from the logger's records, so it reads the same live or rebuilt from a stored run (`PipeDreamLog::find($id)->logger()->steps()`), and hub-level log lines are never steps. Each `StepRecord` answers `name()`, `rule()`, `hub()`, `duration()` (ms), `returnValue()`, `status()` (`ok` / `skipped` / `error` / `fatal`) with `wasOk()` / `wasSkipped()` / `hasErrors()` / `wasFatal()`, `skipReason()` and `messages()` (the info, warning and error lines logged inside that step). `$envelope->logs()` is unchanged — it is the lower-level, record-by-record view.
+
+### Changed
+
+- The README leads with a flow and its step log, and the docs teach `steps()` first and `logs()` as the lower-level view: "Reading the log" is rewritten around steps, the "find the failing step" and stacked-hub examples use `steps()` and collections (`->first(fn ...)`, `->groupBy->hub()`), and the API reference lists `StepRecord`. No behaviour changed and `logs()` is untouched; this release adds `steps()` and documents it.
+
 ## [1.0.0] - Unreleased
 
 ### Added

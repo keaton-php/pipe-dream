@@ -141,6 +141,11 @@ class ReadmeExamplesTest extends TestCase
 
     private function withoutTimes(string $timeline): string
     {
-        return trim(preg_replace('/^\s*\d+\.\d{3} ms  /m', '', $timeline));
+        // A timeline prefix ("0.123 ms  ") and a step's inline "(0.12 ms)" both
+        // vary run to run; the rest of the line is what the output promises.
+        $timeline = preg_replace('/^\s*\d+\.\d{3} ms  /m', '', $timeline);
+        $timeline = preg_replace('/\(\d+(?:\.\d+)? ?ms\)/', '(ms)', $timeline);
+
+        return trim($timeline);
     }
 }

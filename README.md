@@ -8,6 +8,43 @@
 
 Pipe Dream turns a Laravel pipeline into a flow you can read, and a log you can read back: every step named, timed and recorded.
 
+## Here's a flow
+
+Group your steps into named hubs of named rules, and the composition reads like a table of contents. Here is a two-hub flow that publishes a post:
+
+<!-- example: docs/examples/scripts/steps.php -->
+```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeManager;
+
+$flow = PipeManager::create([
+    PipeHub::create()->name('Prepare')->addPipes([TidyTitle::class, CountWords::class, CheckTitleLength::class]),
+    PipeHub::create()->name('Publish')->addPipes([SlugifyTitle::class]),
+])->name('Publish a post');
+
+$envelope = $flow->subject((object) ['title' => 'Launch'])->sendIt();
+
+echo $envelope->steps()
+    ->map(fn ($step) => $step->wasSkipped()
+        ? "↷ {$step->name()} skipped — {$step->skipReason()}"
+        : sprintf('✓ %s (%.2f ms)', $step->name(), $step->duration()))
+    ->implode("\n");
+```
+
+Run it, and ask what happened. `$envelope->steps()` is every step in order — each with its name, its timing, what it returned, and why it was skipped:
+
+<!-- output: docs/examples/scripts/steps.php -->
+```text
+✓ TidyTitle (0.38 ms)
+✓ CountWords (0.02 ms)
+↷ CheckTitleLength skipped — A one-word title is fine
+✓ SlugifyTitle (0.05 ms)
+```
+
+Your flow reads like the spec. Your log reads like the flow.
+
 ## What a pipeline is
 
 A pipeline sends one value (the **subject**) through a list of steps (the **pipes**), in order. Each pipe gets the subject, does its bit, and passes it on. Laravel ships one, `Illuminate\Pipeline\Pipeline`. A `PipeHub` is Pipe Dream's: the same idea, with plain closures as the pipes.
@@ -40,7 +77,7 @@ No `$next` to call and nothing to return: the hub moves on to the next pipe by i
 
 ## Now ask it what happened
 
-Here is the difference. A plain pipeline hands you the final value and nothing else: if the title came out wrong, you are left guessing which step broke it. The hub kept notes. Ask it what happened:
+Here is the difference. A plain pipeline hands you the final value and nothing else: if the title came out wrong, you are left guessing which step broke it. The hub kept notes. `steps()` is the high-level view you saw above; `logs()` is the lower-level one, every record as it was written:
 
 <!-- example: docs/examples/scripts/hub-log.php -->
 ```php
@@ -78,9 +115,9 @@ timerEnd    Closure@hub-log.php:11   Finished executing rule Closure@hub-log.php
 info        PipeHub:sendIt           Finalized result!
 ```
 
-Every pipe was timed, and what each one returned was recorded. You can see exactly where `hello,   PIPE dream` became `Hello, Pipe Dream`, without adding a single line of logging to your code. `$envelope->results()` holds the same results, ready to check in code.
+Every pipe was timed, and what each one returned was recorded, without a single line of logging in your code. `$envelope->results()` holds the same results, ready to check in code.
 
-Now break it on purpose. Change the second step so it eats every space, and run the hub again:
+Now break it on purpose. Change the second step so it eats every space, run the hub again, and ask the steps which one lost the spaces:
 
 <!-- example: docs/examples/scripts/hub-log-broken.php -->
 ```php
@@ -98,21 +135,17 @@ $envelope = PipeHub::create()
     ])
     ->sendIt($post);
 
-foreach ($envelope->logs() as $record) {
-    if ($record['type'] === 'returnValue') {
-        printf("%-30s %s\n", $record['key'], $record['data']);
-    }
-}
+$culprit = $envelope->steps()->first(fn ($step) => ! str_contains($step->returnValue(), ' '));
+
+echo "The spaces vanish at {$culprit->name()}: {$culprit->returnValue()}";
 ```
 
 <!-- output: docs/examples/scripts/hub-log-broken.php -->
 ```text
-Closure@hub-log-broken.php:9   hello,   PIPE dream
-Closure@hub-log-broken.php:10  hello,PIPEdream
-Closure@hub-log-broken.php:11  Hello,pipedream
+The spaces vanish at Closure@hub-log-broken.php:10: hello,PIPEdream
 ```
 
-You don't have to guess which step ate the spaces. The log already points at the second one: it's the first line where they're gone.
+You don't have to guess which step ate the spaces. `steps()->first(...)` walks the run in order and hands you the first step whose output lost them: the second one.
 
 That's the whole difference. A pipeline tells you the answer. A hub hands you the receipt.
 

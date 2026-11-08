@@ -30,12 +30,12 @@ $envelope = PipeManager::create([
     ->subject($post)
     ->sendIt();
 
-foreach ($envelope->logs() as $record) {
-    if ($record['data'] === 'Sending subject through all pipes') {
-        echo $record['context']['name'], PHP_EOL;
-    } elseif ($record['type'] === 'returnValue') {
-        echo '  ', $record['key'], ': ', $record['data'], PHP_EOL;
-    }
-}
+$envelope->steps()
+    ->groupBy->hub()
+    ->each(function ($steps, $hub) {
+        echo $hub, PHP_EOL;
+
+        $steps->each(fn ($step) => printf("  %s: %s\n", $step->name(), $step->status()));
+    });
 
 echo $post->status, ', ', $post->readingTime, ' read', PHP_EOL;

@@ -126,7 +126,7 @@ Every pipe was timed, and what each one returned was recorded. You can see exact
 
 ## 4. Break it on purpose
 
-Change the second step so it eats every space, and run the hub again:
+Change the second step so it eats every space, run the hub again, and ask the steps which one lost them. `$envelope->steps()` is the run as a list — one step per pipe, in order — and `first()` reads down it for you:
 
 <!-- example: docs/examples/scripts/hub-log-broken.php -->
 ```php
@@ -144,21 +144,17 @@ $envelope = PipeHub::create()
     ])
     ->sendIt($post);
 
-foreach ($envelope->logs() as $record) {
-    if ($record['type'] === 'returnValue') {
-        printf("%-30s %s\n", $record['key'], $record['data']);
-    }
-}
+$culprit = $envelope->steps()->first(fn ($step) => ! str_contains($step->returnValue(), ' '));
+
+echo "The spaces vanish at {$culprit->name()}: {$culprit->returnValue()}";
 ```
 
 <!-- output: docs/examples/scripts/hub-log-broken.php -->
 ```text
-Closure@hub-log-broken.php:9   hello,   PIPE dream
-Closure@hub-log-broken.php:10  hello,PIPEdream
-Closure@hub-log-broken.php:11  Hello,pipedream
+The spaces vanish at Closure@hub-log-broken.php:10: hello,PIPEdream
 ```
 
-You don't have to guess which step ate the spaces. The log already points at the second one: it's the first line where they're gone.
+You don't have to guess which step ate the spaces. `steps()->first(...)` hands you the first step whose output lost them: the second one. [Reading the log](05-reading-the-log.md) goes deeper on steps.
 
 A pipeline tells you the answer. A hub hands you the receipt.
 
