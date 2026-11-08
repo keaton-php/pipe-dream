@@ -1,0 +1,1 @@
+../../../docs/examples/scripts/checkout-out-of-stock.php
