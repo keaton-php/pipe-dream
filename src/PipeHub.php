@@ -343,7 +343,6 @@ class PipeHub
     {
         $pipes = [];
         $skippedHub = false;
-        $fatalsBefore = $subject->logger()->fatals()->count();
 
         try {
             if ($this->skipThisHub) {
@@ -402,7 +401,8 @@ class PipeHub
             // A rule records its own fatal before this is thrown. One thrown
             // from skipIf() or an event listener has not been recorded yet,
             // and a stop with no fatal on the log would read as success.
-            if ($subject->logger()->fatals()->count() === $fatalsBefore) {
+            if (! $e->wasRecorded()) {
+                $e->markRecorded();
                 $subject->logger()->fatal('PipeHub:sendIt', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeHubContext());
             }
 
@@ -607,14 +607,14 @@ class PipeHub
         } catch (PipeRuleFatal $e) {
             $subject->logger()->fatal('PipeHub:executeThenCallback', $e->getMessage(), ['exception' => get_class($e)] + $this->getPipeHubContext());
 
-            throw $e;
+            throw $e->markRecorded();
         } catch (Throwable $e) {
             $context = ['exception' => get_class($e)] + $this->getPipeHubContext();
 
             if ($this->errorsAreFatal) {
                 $subject->logger()->fatal('PipeHub:executeThenCallback', $e->getMessage(), $context);
 
-                throw new PipeRuleFatal($e->getMessage(), $subject, 0, $e);
+                throw (new PipeRuleFatal($e->getMessage(), $subject, 0, $e))->markRecorded();
             }
 
             $subject->logger()->error('PipeHub:executeThenCallback', $e->getMessage(), $context);

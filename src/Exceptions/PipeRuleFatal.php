@@ -25,6 +25,27 @@ class PipeRuleFatal extends Exception
         parent::__construct($message, $code, $previous);
     }
 
+    protected bool $recorded = false;
+
+    /**
+     * Whoever logs this fatal on the envelope marks it, so the hub that
+     * catches it records only a fatal nobody has recorded yet.
+     *
+     * @internal
+     */
+    public function markRecorded(): static
+    {
+        $this->recorded = true;
+
+        return $this;
+    }
+
+    /** @internal */
+    public function wasRecorded(): bool
+    {
+        return $this->recorded;
+    }
+
     public function subject()
     {
         return $this->subject;
