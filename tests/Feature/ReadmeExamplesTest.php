@@ -21,6 +21,19 @@ class ReadmeExamplesTest extends TestCase
 
     private const FIXTURES = self::ROOT.'/docs/examples';
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // The GeoIP stand-in really waits; keep the suite fast.
+        \GeoIp::$timeScale = 0.001;
+    }
+
+    protected function defineDatabaseMigrations()
+    {
+        $this->loadMigrationsFrom(__DIR__.'/../../database/migrations');
+    }
+
     public function test_every_example_in_the_readme_is_its_fixture_verbatim(): void
     {
         preg_match_all('/<!-- example: (\S+) -->\n```php\n(.*?)\n```/s', $this->readme(), $examples, PREG_SET_ORDER);
@@ -144,7 +157,10 @@ class ReadmeExamplesTest extends TestCase
         // A timeline prefix ("0.123 ms  ") and a step's inline "(0.12 ms)" both
         // vary run to run; the rest of the line is what the output promises.
         $timeline = preg_replace('/^\s*\d+\.\d{3} ms  /m', '', $timeline);
-        $timeline = preg_replace('/\(\d+(?:\.\d+)? ?ms\)/', '(ms)', $timeline);
+        $timeline = preg_replace('/\(\d+(?:\.\d+)? ?m?s\)/', '(ms)', $timeline);
+        // A slow step's "(14.80 s)" is narrower than a fast run's "(14.80 ms)",
+        // which shifts the columns after it.
+        $timeline = preg_replace('/ {2,}/', ' ', $timeline);
 
         return trim($timeline);
     }

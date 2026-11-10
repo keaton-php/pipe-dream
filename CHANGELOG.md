@@ -2,6 +2,13 @@
 
 All notable changes to this package are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- A receipt shows a duration of a second or more in seconds (`14.80 s`), not as a long count of milliseconds. `ConsoleFormat` and `MarkdownFormat` both do; `ArrayFormat` still gives `duration_ms`.
+- The README leads with readability: four questions about the click-intake flow that the reader answers from the flow alone, then the receipt of a click that was flagged *and* slow, then the checkout. The click example gains a `ClickIntakeFlow`, a `ReceiptSummary` on `IncomingClick`, a `'Newsletter campaign'` skip reason, and a GeoIP stand-in (`GeoIp`) behind `ResolveVisitorCountry`.
+
 ## [1.2.0] - 2026-11-08
 
 ### Added

@@ -76,7 +76,7 @@ class ConsoleFormat implements ReceiptFormat
         $header = ($receipt->flowName() ?? 'Run').' · '.$this->paint($receipt->summary() ?? $receipt->outcome(), self::OUTCOME_COLORS[$receipt->outcome()]);
 
         if ($this->times && $receipt->duration() !== null) {
-            $header .= sprintf(' (%.2f ms)', $receipt->duration());
+            $header .= ' ('.$this->duration($receipt->duration()).')';
         }
 
         return $this->paint($header, '1');
@@ -137,7 +137,7 @@ class ConsoleFormat implements ReceiptFormat
             return 'skipped';
         }
 
-        return $step->duration() === null ? '' : sprintf('(%.2f ms)', $step->duration());
+        return $step->duration() === null ? '' : '('.$this->duration($step->duration()).')';
     }
 
     protected function pad(string $text, int $width): string
@@ -148,5 +148,13 @@ class ConsoleFormat implements ReceiptFormat
     protected function paint(string $text, string $color): string
     {
         return $this->colors ? "\033[{$color}m{$text}\033[0m" : $text;
+    }
+
+    /** Milliseconds as "0.42 ms", or "14.81 s" from a second up. */
+    protected function duration(float $milliseconds): string
+    {
+        return $milliseconds >= 1000
+            ? sprintf('%.2f s', $milliseconds / 1000)
+            : sprintf('%.2f ms', $milliseconds);
     }
 }
