@@ -32,7 +32,7 @@ class MarkdownFormat implements ReceiptFormat
         $header = '**'.$this->escape($receipt->flowName() ?? 'Run').'** · '.$this->escape($receipt->summary() ?? $receipt->outcome());
 
         if ($this->times && $receipt->duration() !== null) {
-            $header .= sprintf(' (%.2f ms)', $receipt->duration());
+            $header .= ' ('.$this->duration($receipt->duration()).')';
         }
 
         $blocks = [$header];
@@ -109,11 +109,19 @@ class MarkdownFormat implements ReceiptFormat
             return 'skipped';
         }
 
-        return $step->duration() === null ? '' : sprintf('%.2f ms', $step->duration());
+        return $step->duration() === null ? '' : $this->duration($step->duration());
     }
 
     protected function escape(string $text): string
     {
         return str_replace(['\\', '|', '*', '_', '`', "\r\n", "\n"], ['\\\\', '\|', '\*', '\_', '\`', '<br>', '<br>'], $text);
+    }
+
+    /** Milliseconds as "0.42 ms", or "14.81 s" from a second up. */
+    protected function duration(float $milliseconds): string
+    {
+        return $milliseconds >= 1000
+            ? sprintf('%.2f s', $milliseconds / 1000)
+            : sprintf('%.2f ms', $milliseconds);
     }
 }

@@ -273,4 +273,15 @@ class SummarisedSubject implements \Keaton\PipeDream\Contracts\ReceiptSummary
 
         return $this->summary;
     }
+
+    public function test_a_duration_of_a_second_or_more_reads_in_seconds(): void
+    {
+        foreach ([new ConsoleFormat(), new MarkdownFormat()] as $format) {
+            $duration = fn (float $ms) => $this->duration($ms);
+
+            $this->assertSame('0.42 ms', $duration->call($format, 0.42));
+            $this->assertSame('999.99 ms', $duration->call($format, 999.99));
+            $this->assertSame('14.81 s', $duration->call($format, 14812.4));
+        }
+    }
 }

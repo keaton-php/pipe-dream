@@ -1,12 +1,13 @@
 <?php
 
 use Illuminate\Http\Request;
+use Keaton\PipeDream\Contracts\ReceiptSummary;
 
 /**
  * The subject of the full example: one ad click, as the request described
  * it. It has the same fields as the plain clicks in the earlier examples.
  */
-class IncomingClick
+class IncomingClick implements ReceiptSummary
 {
     public array $params;
 
@@ -81,5 +82,10 @@ class IncomingClick
     public function destination(): string
     {
         return $this->destination ?? 'https://example.test/thanks';
+    }
+
+    public function receiptSummary(): ?string
+    {
+        return $this->isFlagged() ? 'Flagged: '.implode(', ', $this->flags) : null;
     }
 }

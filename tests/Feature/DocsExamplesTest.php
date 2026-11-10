@@ -26,6 +26,14 @@ class DocsExamplesTest extends TestCase
         'Reference',
     ];
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // The GeoIP stand-in really waits; keep the suite fast.
+        \GeoIp::$timeScale = 0.001;
+    }
+
     protected function defineDatabaseMigrations()
     {
         $this->loadMigrationsFrom(__DIR__.'/../../database/migrations');
@@ -114,7 +122,7 @@ class DocsExamplesTest extends TestCase
     private function normalize(string $output): string
     {
         $output = str_replace(realpath(self::ROOT).'/', '', $output);
-        $output = preg_replace('/\(\d+(?:\.\d+)? ?ms\)/', '(ms)', $output);
+        $output = preg_replace('/\(\d+(?:\.\d+)? ?m?s\)/', '(ms)', $output);
         $output = preg_replace('/"duration_ms": [\d.]+/', '"duration_ms": 0', $output);
         $output = preg_replace('/ {2,}/', ' ', $output);
 

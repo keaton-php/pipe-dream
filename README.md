@@ -8,21 +8,180 @@ Pipe Dream turns your business logic into a flow you can read, and every run int
 
 ---
 
-> **"Why was my order put on hold?"**
+> **"Why was my click flagged, and why did it take 15 seconds to redirect me?"**
 
-In most codebases, the honest answer is *"let me get an engineer to dig through the logs."*
+Our tester clicked a tracking link and asked exactly that. The `status` column could answer the first half: `flagged`. Nothing could answer the second half without an engineer, a profiler and an afternoon.
 
-With Pipe Dream, the answer is one database row:
+With Pipe Dream, both answers are in one database row:
+
+<!-- output: docs/examples/scripts/click-slow.php -->
+```text
+Ad click intake · Flagged: Two or more bot signals (14.80 s)
+
+Validate & start session — Is this a complete, signed click for a live campaign?
+  ✓ RequireTrackingParameters      (0.08 ms)
+  ✓ VerifyClickSignature           (0.02 ms)
+  ✓ RecognizeCampaign              (0.05 ms)
+  ✓ StartClickSession              (0.02 ms)
+
+Tracking — Attribution cookie and conversion-path tracking
+  ✓ SetAttributionCookie           (0.01 ms)
+  ✓ RecordConversionPath           (0.01 ms)
+
+Geo exclusions — Is the visitor somewhere this campaign buys traffic?
+  ✓ ResolveVisitorCountry          (14.80 s)  GeoIP timed out after 5 s (try 1 of 3)
+                                              GeoIP timed out after 5 s (try 2 of 3)
+                                              Visitor is in US
+  ✓ EnforceCampaignCountries       (0.09 ms)
+  ✓ EnforceAdvertiserGeoExclusions (0.02 ms)
+
+Suppression — Has this visitor asked the advertiser not to contact them?
+  ✓ CheckAdvertiserSuppressionList (0.17 ms)
+
+Blacklist & graylist — Checks that are never skipped
+  ✓ MatchIpBlacklist               (0.02 ms)
+  ✓ MatchPublisherBlacklist        (0.01 ms)
+  ✓ ChallengeGraylistedPublishers  (0.01 ms)
+
+Bot checks — Does this look like a person, not a script or a server?
+  ✗ DetectHostingProviderIp        (0.05 ms)  198.51.100.7 belongs to a hosting provider
+  ✗ MatchKnownBotUserAgents        (0.02 ms)  User agent looks like a bot
+  ✓ ScoreClickVelocity             (0.01 ms)
+
+Fulfillment & caps — Daily caps and budget, only for clicks we will pay for · skipped: Flagged — not charged
+  ↷ EnforceDailyClickCap           skipped
+  ↷ RecordBudgetSpend              skipped
+
+Route — Landing page, review queue or a safe dead end
+  ✓ ChooseDestination              (0.01 ms)
+```
+
+- **Why it was flagged:** two bot checks failed, a hosting provider's IP and a bot's user agent, so the advertiser was never charged for it.
+- **Why it was slow:** `ResolveVisitorCountry` spent 14.80 s on a GeoIP provider that timed out twice. Every other step took a fraction of a millisecond.
+
+Nobody added a timer or wrote a log line to get that. Every rule is named, timed and recorded on every run, so the answer is already there when someone asks.
+
+## A status tells you where it ended up. A receipt tells you how it got there.
+
+And how long every step took. Every run is saved as one row, step by step, so "which step got slow this week?" is a query over rows you already have, and a dashboard is a page that reads them. There's no instrumentation to add and no list of steps to keep in sync: the flow *is* the list of steps.
+
+## The flow reads like a book
+
+The receipt above came from this:
+
+<!-- example: docs/examples/ClickIntakeFlow.php -->
+```php
+<?php
+
+use Keaton\PipeDream\PipeHub;
+use Keaton\PipeDream\PipeManager;
+
+class ClickIntakeFlow
+{
+    public static function build(): PipeManager
+    {
+        return PipeManager::create([
+
+            PipeHub::create()
+                ->name('Validate & start session')
+                ->description('Is this a complete, signed click for a live campaign?')
+                ->addPipes([
+                    RequireTrackingParameters::class,
+                    VerifyClickSignature::class,
+                    RecognizeCampaign::class,
+                    StartClickSession::class,
+                ]),                          // a fatal here (a bad click) ends the whole flow
+
+            PipeHub::create()
+                ->name('Tracking')
+                ->description('Attribution cookie and conversion-path tracking')
+                ->addPipes([
+                    SetAttributionCookie::class,
+                    RecordConversionPath::class,
+                ]),
+
+            PipeHub::create()
+                ->name('Geo exclusions')
+                ->description('Is the visitor somewhere this campaign buys traffic?')
+                ->addPipes([
+                    ResolveVisitorCountry::class,
+                    EnforceCampaignCountries::class,
+                    EnforceAdvertiserGeoExclusions::class,
+                ]),
+
+            PipeHub::create()
+                ->name('Suppression')
+                ->description('Has this visitor asked the advertiser not to contact them?')
+                ->addPipes([
+                    CheckAdvertiserSuppressionList::class,
+                ])
+                ->skipIf(fn ($click) => $click->campaignSettings()->isNewsletter()),
+
+            PipeHub::create()
+                ->name('Blacklist & graylist')
+                ->description('Checks that are never skipped')
+                ->addPipes([
+                    MatchIpBlacklist::class,
+                    MatchPublisherBlacklist::class,
+                    ChallengeGraylistedPublishers::class,
+                ])
+                ->then(fn ($click) => $click->isListed() ? $click->flag('Blacklisted') : null),
+
+            PipeHub::create()
+                ->name('Bot checks')
+                ->description('Does this look like a person, not a script or a server?')
+                ->addPipes([
+                    DetectHostingProviderIp::class,
+                    MatchKnownBotUserAgents::class,
+                    ScoreClickVelocity::class,
+                ])
+                ->skipIf(fn ($click) => $click->campaignSettings()->bot_checks_disabled)
+                ->then(fn ($click) => $click->get('bot_signals') >= 2 ? $click->flag('Two or more bot signals') : null),
+
+            PipeHub::create()
+                ->name('Fulfillment & caps')
+                ->description('Daily caps and budget, only for clicks we will pay for')
+                ->addPipes([
+                    EnforceDailyClickCap::class,
+                    RecordBudgetSpend::class,
+                ])
+                ->skipIf(fn ($click) => $click->isFlagged() || $click->isTest()
+                    ? 'Flagged — not charged'
+                    : null)
+                ->errorsAreFatal()           // a failed charge ends this hub...
+                ->fatalsStopThisHubOnly(),   // ...but the click is still routed
+
+            PipeHub::create()
+                ->name('Route')
+                ->description('Landing page, review queue or a safe dead end')
+                ->addPipes([
+                    ChooseDestination::class,
+                ]),
+
+        ])
+            ->name('Ad click intake')
+            ->then(fn ($click) => $click->markComplete());
+    }
+}
+```
+
+Read it once and you know the whole intake. So will the next engineer, your support lead, and you in six months.
+
+That pattern has pushed hundreds of millions of clicks through production, with a receipt for every one. When something looked wrong, or slow, nobody stepped through code. They read the receipt.
+
+## Same shape, any business
+
+Here's a checkout. Different business, same pipe, same receipt:
 
 <!-- output: docs/examples/scripts/checkout-held.php -->
 ```text
-Checkout · On hold: Two or more fraud signals (2.58 ms)
+Checkout · On hold: Two or more fraud signals (2.47 ms)
 
 Validate the order — Is this a complete order for items we can actually ship?
-  ✓ RequireShippingAddress        (0.06 ms)
-  ✓ ConfirmItemsInStock           (1.75 ms)  3 items in stock
+  ✓ RequireShippingAddress        (0.04 ms)
+  ✓ ConfirmItemsInStock           (2.11 ms)  3 items in stock
   ✓ ApplyDiscountCodes            (0.04 ms)  SPRING20 applied: -$24.00
-  ✓ CalculateTax                  (0.02 ms)  Tax: $7.92
+  ✓ CalculateTax                  (0.01 ms)  Tax: $7.92
 
 Fraud screen — Does this look like the real cardholder?
   ✗ MatchBillingToShippingCountry (0.02 ms)  Billing US, shipping NL
@@ -39,95 +198,9 @@ Fulfil — Reserve stock, tell the warehouse, email the receipt · skipped: Held
   ↷ EmailReceipt                  skipped
 ```
 
-Every rule that ran. What it decided. Why. How long it took. And proof of what *didn't* happen: the card was never charged and nothing shipped, so your support team can say so, with receipts.
+The card was never charged and nothing shipped, and the receipt proves it.
 
-You didn't write a single log line to get that. You wrote this:
-
-<!-- example: docs/examples/scripts/checkout.php -->
-```php
-<?php
-
-use Keaton\PipeDream\PipeHub;
-use Keaton\PipeDream\PipeManager;
-
-$envelope = PipeManager::create([
-
-    PipeHub::create()
-        ->name('Validate the order')
-        ->description('Is this a complete order for items we can actually ship?')
-        ->addPipes([
-            RequireShippingAddress::class,
-            ConfirmItemsInStock::class,
-            ApplyDiscountCodes::class,
-            CalculateTax::class,
-        ]),                           // a broken order ends the whole flow here
-
-    PipeHub::create()
-        ->name('Fraud screen')
-        ->description('Does this look like the real cardholder?')
-        ->addPipes([
-            MatchBillingToShippingCountry::class,
-            CheckCardVelocity::class,
-            ScoreDeviceFingerprint::class,
-        ])
-        ->skipIf(fn ($order) => $order->customerIsTrusted(), 'Trusted customer')
-        ->then(fn ($order) => $order->riskSignals() >= 2 ? $order->holdForReview('Two or more fraud signals') : null),
-
-    PipeHub::create()
-        ->name('Charge')
-        ->description('Take the money, only for orders we will ship')
-        ->addPipes([
-            AuthorizePayment::class,
-            CapturePayment::class,
-        ])
-        ->skipIf(fn ($order) => $order->isOnHold() ? "Held for review: {$order->holdReason}" : null)
-        ->errorsAreFatal(),           // a failed charge ends the flow
-
-    PipeHub::create()
-        ->name('Fulfil')
-        ->description('Reserve stock, tell the warehouse, email the receipt')
-        ->addPipes([
-            ReserveInventory::class,
-            SendToWarehouse::class,
-            EmailReceipt::class,
-        ])
-        ->skipIf(fn ($order) => $order->isOnHold() ? "Held for review: {$order->holdReason}" : null),
-
-])
-    ->name('Checkout')
-    ->subject($order)
-    ->then(fn ($order) => $order->markPlaced())
-    ->sendIt();
-```
-
-Read it once and you understand the whole checkout process. So will the next engineer, your support lead, and you in six months.
-
-## Same shape, any business
-
-Checkout is one flow. Here's a completely different one: a production ad-click intake, the kind that sits in front of a high-volume tracking system. Different business, same pipe, same receipt:
-
-```text
-Ad click intake · completed with errors (1.40 ms)
-
-Validate & start session
-  ✓ RequireTrackingParameters      (0.02 ms)
-  ✓ VerifyClickSignature           (0.01 ms)
-  ✓ RecognizeCampaign              (0.01 ms)  Campaign quillstone-free-plan
-
-Suppression · skipped: Newsletter campaign
-  ↷ CheckAdvertiserSuppressionList skipped
-
-Bot checks
-  ✗ DetectHostingProviderIp        (0.14 ms)  203.0.113.23 belongs to Example Cloud
-  ✗ ScoreClickVelocity             (0.02 ms)  4 clicks from this IP in a minute
-
-Route
-  ✓ ChooseDestination              (0.01 ms)  Held for review: two bot signals
-```
-
-That pattern has pushed hundreds of millions of clicks through production, with a full audit trail on every one. When something looked wrong, nobody stepped through code. They read the receipt.
-
-Loan decisions, KYC onboarding, insurance claims, refunds, content moderation: **if it's a series of decisions someone will later ask you to explain, it's a pipe.**
+Loan decisions, KYC onboarding, insurance claims, refunds, content moderation: **if it's a series of decisions someone will later ask you to explain, or ask why it was slow, it's a pipe.**
 
 ## How it works, in three words
 
