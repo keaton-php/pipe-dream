@@ -42,7 +42,7 @@ class ClickIntakeFlow
                 ->addPipes([
                     CheckAdvertiserSuppressionList::class,
                 ])
-                ->skipIf(fn ($click) => $click->campaignSettings()->isNewsletter()),
+                ->skipIf(fn ($click) => $click->campaignSettings()->isNewsletter(), 'Newsletter campaign'),
 
             PipeHub::create()
                 ->name('Blacklist & graylist')
