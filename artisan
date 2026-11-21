@@ -1,0 +1,18 @@
+#!/usr/bin/env php
+<?php
+
+/*
+ * `php artisan test` runs this package's test suite (Orchestra Testbench boots
+ * a Laravel app for each test case). Any other command goes to Testbench's
+ * own console.
+ */
+
+$arguments = array_slice($_SERVER['argv'], 1);
+
+if (($arguments[0] ?? null) === 'test') {
+    $command = array_merge([PHP_BINARY, __DIR__.'/vendor/bin/phpunit'], array_slice($arguments, 1));
+    passthru(implode(' ', array_map('escapeshellarg', $command)), $status);
+    exit($status);
+}
+
+require __DIR__.'/vendor/bin/testbench';
