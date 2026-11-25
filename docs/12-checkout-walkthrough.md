@@ -79,7 +79,7 @@ Fulfill has the same skip as Charge. The flow's `then()` marks the order placed 
 | Order | Receipt header | What it shows |
 |---|---|---|
 | [`ord_48213`](index.md) | `On hold: Two or more fraud signals` | two flags, then Charge and Fulfill skipped with the reason |
-| [`ord_48214`](03-your-first-flow.md) | `Placed` | the fraud screen skipped for a trusted customer, every other step ✓ |
+| [`ord_48214`](03-your-first-flow.md) | `Placed` | the fraud screen skipped for a trusted customer, `ApplyDiscountCodes` skipped (no code), every other step ✓ |
 | [`ord_48215`](07-pass-flag-skip-stop.md) | `stopped` | one ■ at validation, and nothing after it |
 
 ## In an app

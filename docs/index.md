@@ -30,7 +30,7 @@ Record & notify: Write the row, update the counters, tell the advertiser
   ✓ FirePostback            (1.07 ms)  Advertiser notified, HTTP 200
 ```
 
-The receipt lists every rule that ran, what it decided and why, and how long it took. A dropped click gets the same receipt. The rule that said no is marked with a ✗ and its reason, and every step after it is marked as skipped. Nobody has to guess where it stopped, or whether the advertiser was told.
+The receipt lists every rule that ran, what it decided and why, and how long it took. A dropped click gets the same receipt. The rule that said no is marked with a ✗ and its reason, and every stage it rules out is marked as skipped. Nobody has to guess where it stopped, or whether the advertiser was told.
 
 You didn't write a single log line to get that. You wrote this:
 

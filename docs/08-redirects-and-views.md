@@ -54,7 +54,8 @@ class PlaceOrder
                     ->addPipes([
                         AuthorizePayment::class,
                         CapturePayment::class,
-                    ]),
+                    ])
+                    ->errorsAreFatal(),
             ])
                 ->name('Checkout')
                 ->subject($order)
@@ -78,7 +79,6 @@ Three orders go through it: a good one, one without an address and one with a so
 
 ```php
 $placeOrder = app(PlaceOrder::class);
-
 $placed = $placeOrder(Orders::find('ord_48214'));
 $noAddress = $placeOrder(Orders::find('ord_48216'));
 $soldOut = $placeOrder(Orders::find('ord_48215'));
