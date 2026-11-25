@@ -1,0 +1,28 @@
+name: code-style
+
+# Check-only. A formatting failure fails the build; nothing commits on its own.
+on:
+  push:
+    branches: [1.x]
+  pull_request:
+
+jobs:
+  pint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: Check formatting
+        run: vendor/bin/pint --test

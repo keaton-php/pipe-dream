@@ -1,0 +1,9 @@
+parameters:
+    # The highest level that is clean without adding types to every signature.
+    level: 5
+
+    paths:
+        - src
+
+    # Do not trust a docblock over the signature.
+    treatPhpDocTypesAsCertain: false
